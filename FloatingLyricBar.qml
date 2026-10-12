@@ -71,29 +71,24 @@ PanelWindow {
         top: root.anchorTop ? 28 : 0
         bottom: !root.anchorTop ? 28 : 0
     }
-    implicitHeight: root.settingsOpen ? 370 : (theme.barHeight + 16)
+    implicitHeight: root.settingsOpen ? 370 : (theme.barHeight + 20)
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
 
     Behavior on implicitHeight {
-        NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic }
+        NumberAnimation {
+            duration: 380
+            easing.type: Easing.OutCubic
+        }
     }
 
     // HyprGlass layer integration
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:lyricbar"
 
-    // Click mask: Hanya area card / modal aktif yang menangkap mouse click
+    // Click mask: Hanya area card aktif yang menangkap input mouse
     mask: Region {
-        item: root.effectiveVisible ? (root.compact ? miniPill : (root.settingsOpen ? settingsModalWrapper : lyricCard)) : null
-    }
-
-    Item {
-        id: settingsModalWrapper
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        width: Math.max(settingsCard.width, lyricCard.width)
-        height: root.settingsOpen ? (settingsCard.height + lyricCard.height + 12) : lyricCard.height
+        item: (cardWrapper.opacity > 0.02) ? cardWrapper : null
     }
 
     // ==========================================
@@ -218,18 +213,15 @@ EOF
     // ==========================================
     // 6. Lyric Listener Process (MPRIS & LRCLIB)
     // ==========================================
-    readonly property string listenerScriptPath: {
-        const localPath = String(Qt.resolvedUrl("lyric_listener.py")).replace(/^file:\/\//, "");
-        return localPath;
-    }
+    readonly property string listenerScript: Quickshell.env("HOME") + "/.config/quickshell/lyricbar/lyric_listener.py"
 
     Process {
         id: lyricProcess
-        command: {
-            const cmd = ["python3", root.listenerScriptPath];
-            if (root.demoMode) cmd.push("--demo");
-            return cmd;
-        }
+        command: [
+            root.listenerScript,
+            root.demoMode ? "--demo" : ""
+        ].filter(arg => arg !== "")
+
         running: true
 
         stdout: SplitParser {
@@ -269,7 +261,7 @@ EOF
     }
 
     // ==========================================
-    // 7. Smooth Text Transition (Fade & Slide)
+    // 7. Apple-Style Lyric Text Transition (Scale, Fade & Slide)
     // ==========================================
     onTargetLyricChanged: {
         if (targetLyric === displayedLyric) return;
@@ -283,21 +275,29 @@ EOF
                 target: lyricLabel
                 property: "opacity"
                 to: 0.0
-                duration: Math.round(theme.animFast * 0.8)
+                duration: 140
                 easing.type: Easing.InQuad
             }
             NumberAnimation {
                 target: lyricLabel
                 property: "y"
-                to: -7
-                duration: Math.round(theme.animFast * 0.8)
+                to: -9
+                duration: 140
+                easing.type: Easing.InQuad
+            }
+            NumberAnimation {
+                target: lyricLabel
+                property: "scale"
+                to: 0.95
+                duration: 140
                 easing.type: Easing.InQuad
             }
         }
         ScriptAction {
             script: {
                 root.displayedLyric = root.targetLyric;
-                lyricLabel.y = 7;
+                lyricLabel.y = 9;
+                lyricLabel.scale = 0.95;
             }
         }
         ParallelAnimation {
@@ -305,15 +305,23 @@ EOF
                 target: lyricLabel
                 property: "opacity"
                 to: 1.0
-                duration: theme.animMed
+                duration: 280
                 easing.type: Easing.OutCubic
             }
             NumberAnimation {
                 target: lyricLabel
                 property: "y"
                 to: 0
-                duration: theme.animMed
+                duration: 280
                 easing.type: Easing.OutCubic
+            }
+            NumberAnimation {
+                target: lyricLabel
+                property: "scale"
+                to: 1.0
+                duration: 320
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.06
             }
         }
     }
@@ -329,7 +337,7 @@ EOF
         text: root.targetLyric
     }
 
-    // Action button component
+    // Apple-style Glass Action Button with tactile micro-interaction
     component GlassActionBtn: Rectangle {
         id: gbtn
         property string icon: ""
@@ -337,12 +345,23 @@ EOF
         property color hoverColor: theme.accent
         signal clicked()
 
-        implicitWidth: 24
-        implicitHeight: 24
-        radius: 6
-        color: gbtnMouse.containsMouse ? Qt.rgba(theme.text.r, theme.text.g, theme.text.b, 0.12) : "transparent"
+        implicitWidth: 26
+        implicitHeight: 26
+        radius: 7
+        color: gbtnMouse.pressed
+               ? Qt.rgba(theme.text.r, theme.text.g, theme.text.b, 0.22)
+               : (gbtnMouse.containsMouse ? Qt.rgba(theme.text.r, theme.text.g, theme.text.b, 0.12) : "transparent")
 
-        Behavior on color { ColorAnimation { duration: theme.animFast } }
+        scale: gbtnMouse.pressed ? 0.88 : (gbtnMouse.containsMouse ? 1.08 : 1.0)
+
+        Behavior on color { ColorAnimation { duration: 160 } }
+        Behavior on scale {
+            NumberAnimation {
+                duration: 200
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.35
+            }
+        }
 
         Text {
             anchors.centerIn: parent
@@ -351,7 +370,7 @@ EOF
             font.pixelSize: 12
             renderType: Text.NativeRendering
             color: gbtnMouse.containsMouse ? gbtn.hoverColor : gbtn.iconColor
-            Behavior on color { ColorAnimation { duration: theme.animFast } }
+            Behavior on color { ColorAnimation { duration: 160 } }
         }
 
         MouseArea {
@@ -369,7 +388,7 @@ EOF
         property string keyText: ""
         implicitWidth: klabel.implicitWidth + 14
         implicitHeight: 22
-        radius: 5
+        radius: 6
         color: Qt.rgba(theme.bgCard.r, theme.bgCard.g, theme.bgCard.b, 0.6)
         border.color: theme.glassBorder
         border.width: 1
@@ -387,586 +406,704 @@ EOF
     }
 
     // ==========================================
-    // 8. Settings Modal (Keybinds & Preferences)
+    // 8. UNIFIED CONTAINER (Card Wrapper)
+    // Apple-Style Entrance, Exit & Morphology Engine
     // ==========================================
-    Rectangle {
-        id: settingsCard
-        visible: opacity > 0
-        opacity: root.settingsOpen ? 1.0 : 0.0
-        scale: root.settingsOpen ? 1.0 : 0.92
-
+    Item {
+        id: cardWrapper
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: lyricCard.top
-        anchors.bottomMargin: 10
+        anchors.bottom: !root.anchorTop ? parent.bottom : undefined
+        anchors.top: root.anchorTop ? parent.top : undefined
 
-        width: 480
-        height: 270
-        radius: 16
-        color: theme.glassBg
-        border.color: theme.glassBorder
-        border.width: 1
-        clip: true
+        width: Math.max(lyricCard.width, root.settingsOpen ? settingsCard.width : 0)
+        height: lyricCard.height + (root.settingsOpen ? (settingsCard.height + 12) : 0)
 
-        Behavior on opacity { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
-        Behavior on scale { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutBack } }
-        Behavior on color { ColorAnimation { duration: theme.animMed } }
-        Behavior on border.color { ColorAnimation { duration: theme.animMed } }
+        readonly property bool isShown: root.effectiveVisible
 
-        // Top Specular Highlight line
-        Rectangle {
-            anchors {
-                top: parent.top
-                left: parent.left
-                right: parent.right
-                margins: 1
+        // Apple-style entrance / exit fluid spring state
+        property real animY: isShown ? 0 : (root.anchorTop ? -50 : 50)
+        property real animScale: isShown ? 1.0 : 0.86
+        property real animOpacity: isShown ? 1.0 : 0.0
+
+        y: animY
+        scale: animScale
+        opacity: animOpacity
+
+        visible: opacity > 0.001
+
+        Behavior on animY {
+            NumberAnimation {
+                duration: cardWrapper.isShown ? 480 : 280
+                easing.type: cardWrapper.isShown ? Easing.OutBack : Easing.InCubic
+                easing.overshoot: 1.18
             }
-            height: 1
-            color: theme.glassHighlight
+        }
+        Behavior on animScale {
+            NumberAnimation {
+                duration: cardWrapper.isShown ? 480 : 280
+                easing.type: cardWrapper.isShown ? Easing.OutBack : Easing.InCubic
+                easing.overshoot: 1.14
+            }
+        }
+        Behavior on animOpacity {
+            NumberAnimation {
+                duration: cardWrapper.isShown ? 360 : 220
+                easing.type: cardWrapper.isShown ? Easing.OutCubic : Easing.InQuad
+            }
         }
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 14
-            spacing: 8
+        Behavior on width {
+            NumberAnimation {
+                duration: 440
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.08
+            }
+        }
 
-            // Header Row
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
+        Behavior on height {
+            NumberAnimation {
+                duration: 380
+                easing.type: Easing.OutCubic
+            }
+        }
 
-                Text {
-                    text: "󰒓"
-                    font.family: theme.iconFont
-                    font.pixelSize: 14
-                    renderType: Text.NativeRendering
-                    color: theme.accent
-                }
+        // ==========================================
+        // 9. Settings Modal (Keybinds & Preferences)
+        // ==========================================
+        Rectangle {
+            id: settingsCard
+            visible: opacity > 0.001
+            opacity: root.settingsOpen ? 1.0 : 0.0
+            scale: root.settingsOpen ? 1.0 : 0.90
+            y: root.settingsOpen ? 0 : 18
 
-                Text {
-                    text: "LyricBar Settings & Keybinds"
-                    font.family: theme.fontFamily
-                    font.pixelSize: 12
-                    font.bold: true
-                    renderType: Text.NativeRendering
-                    color: theme.text
-                }
+            anchors.horizontalCenter: lyricCard.horizontalCenter
+            anchors.bottom: !root.anchorTop ? lyricCard.top : undefined
+            anchors.top: root.anchorTop ? lyricCard.bottom : undefined
+            anchors.margins: 10
 
-                Item { Layout.fillWidth: true }
+            width: 480
+            height: 270
+            radius: 18
+            color: theme.glassBg
+            border.color: theme.glassBorder
+            border.width: 1
+            clip: true
 
-                GlassActionBtn {
-                    icon: "󰅖"
-                    hoverColor: theme.danger
-                    onClicked: root.settingsOpen = false
+            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+            Behavior on scale {
+                NumberAnimation {
+                    duration: 380
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.14
                 }
             }
+            Behavior on y {
+                NumberAnimation {
+                    duration: 380
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.10
+                }
+            }
+            Behavior on color { ColorAnimation { duration: theme.animMed } }
+            Behavior on border.color { ColorAnimation { duration: theme.animMed } }
 
-            // Separator
+            // Top Specular Highlight line
             Rectangle {
-                Layout.fillWidth: true
+                anchors {
+                    top: parent.top
+                    left: parent.left
+                    right: parent.right
+                    margins: 1
+                }
                 height: 1
-                color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.4)
+                color: theme.glassHighlight
             }
 
-            // Keybindings Section Table
             ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 5
-
-                // Row: Toggle Visibility
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text {
-                        text: "Toggle LyricBar"
-                        font.family: theme.fontFamily
-                        font.pixelSize: 11
-                        color: theme.textDim
-                        renderType: Text.NativeRendering
-                    }
-                    Item { Layout.fillWidth: true }
-                    KeyBadge { keyText: "SUPER + Y" }
-                }
-
-                // Row: Mini Pill Mode
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text {
-                        text: "Compact Mini-Pill"
-                        font.family: theme.fontFamily
-                        font.pixelSize: 11
-                        color: theme.textDim
-                        renderType: Text.NativeRendering
-                    }
-                    Item { Layout.fillWidth: true }
-                    KeyBadge { keyText: "SUPER + ALT + Y" }
-                }
-
-                // Row: Settings Modal
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text {
-                        text: "Open / Close Settings"
-                        font.family: theme.fontFamily
-                        font.pixelSize: 11
-                        color: theme.textDim
-                        renderType: Text.NativeRendering
-                    }
-                    Item { Layout.fillWidth: true }
-                    KeyBadge { keyText: "SUPER + CTRL + Y" }
-                }
-
-                // Row: Media controls
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text {
-                        text: "Media Shortcuts"
-                        font.family: theme.fontFamily
-                        font.pixelSize: 11
-                        color: theme.textDim
-                        renderType: Text.NativeRendering
-                    }
-                    Item { Layout.fillWidth: true }
-                    KeyBadge { keyText: "Wheel: Volume  •  R-Click: Next  •  Mid-Click: Prev" }
-                }
-            }
-
-            // Separator
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.4)
-            }
-
-            // Behavior Toggles & Action Row
-            RowLayout {
-                Layout.fillWidth: true
+                anchors.fill: parent
+                anchors.margins: 14
                 spacing: 8
 
-                // Auto-Hide Switch Button
-                Rectangle {
-                    implicitWidth: autoHideLabel.implicitWidth + 18
-                    implicitHeight: 26
-                    radius: 6
-                    color: root.autoHideOnStop ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
-                    border.color: root.autoHideOnStop ? theme.accent : theme.border
-                    border.width: 1
+                // Header Row
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
 
                     Text {
-                        id: autoHideLabel
-                        anchors.centerIn: parent
-                        text: "Auto-Hide: " + (root.autoHideOnStop ? "ON" : "OFF")
-                        font.family: theme.fontFamily
-                        font.pixelSize: 10
-                        font.bold: true
-                        renderType: Text.NativeRendering
-                        color: root.autoHideOnStop ? theme.accent : theme.textDim
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.autoHideOnStop = !root.autoHideOnStop;
-                            root.saveConfig();
-                        }
-                    }
-                }
-
-                // Demo Mode Switch Button
-                Rectangle {
-                    implicitWidth: demoLabel.implicitWidth + 18
-                    implicitHeight: 26
-                    radius: 6
-                    color: root.demoMode ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
-                    border.color: root.demoMode ? theme.accent : theme.border
-                    border.width: 1
-
-                    Text {
-                        id: demoLabel
-                        anchors.centerIn: parent
-                        text: "Demo: " + (root.demoMode ? "ON" : "OFF")
-                        font.family: theme.fontFamily
-                        font.pixelSize: 10
-                        font.bold: true
-                        renderType: Text.NativeRendering
-                        color: root.demoMode ? theme.accent : theme.textDim
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.demoMode = !root.demoMode;
-                            lyricProcess.running = false;
-                            restartTimer.restart();
-                        }
-                    }
-                }
-
-                Item { Layout.fillWidth: true }
-
-                // Action: Apply Keybinds to Hyprland
-                Rectangle {
-                    implicitWidth: syncLabel.implicitWidth + 18
-                    implicitHeight: 26
-                    radius: 6
-                    color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, syncArea.containsMouse ? 0.35 : 0.18)
-                    border.color: theme.accent
-                    border.width: 1
-
-                    Text {
-                        id: syncLabel
-                        anchors.centerIn: parent
-                        text: root.keybindStatusMsg !== "" ? root.keybindStatusMsg : "Sync Hyprland Binds"
-                        font.family: theme.fontFamily
-                        font.pixelSize: 10
-                        font.bold: true
+                        text: "󰒓"
+                        font.family: theme.iconFont
+                        font.pixelSize: 14
                         renderType: Text.NativeRendering
                         color: theme.accent
                     }
 
-                    MouseArea {
-                        id: syncArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.syncKeybinds()
+                    Text {
+                        text: "LyricBar Settings & Keybinds"
+                        font.family: theme.fontFamily
+                        font.pixelSize: 12
+                        font.bold: true
+                        renderType: Text.NativeRendering
+                        color: theme.text
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    GlassActionBtn {
+                        icon: "󰅖"
+                        onClicked: root.settingsOpen = false
+                    }
+                }
+
+                // Keybindings Section Table
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+
+                    // Row: Toggle Visibility
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Toggle LyricBar"
+                            font.family: theme.fontFamily
+                            font.pixelSize: 11
+                            color: theme.textDim
+                            renderType: Text.NativeRendering
+                        }
+                        Item { Layout.fillWidth: true }
+                        KeyBadge { keyText: "SUPER + Y" }
+                    }
+
+                    // Row: Mini Pill Mode
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Compact Mini-Pill"
+                            font.family: theme.fontFamily
+                            font.pixelSize: 11
+                            color: theme.textDim
+                            renderType: Text.NativeRendering
+                        }
+                        Item { Layout.fillWidth: true }
+                        KeyBadge { keyText: "SUPER + ALT + Y" }
+                    }
+
+                    // Row: Settings Modal
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Open / Close Settings"
+                            font.family: theme.fontFamily
+                            font.pixelSize: 11
+                            color: theme.textDim
+                            renderType: Text.NativeRendering
+                        }
+                        Item { Layout.fillWidth: true }
+                        KeyBadge { keyText: "SUPER + CTRL + Y" }
+                    }
+
+                    // Row: Media controls
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Media Shortcuts"
+                            font.family: theme.fontFamily
+                            font.pixelSize: 11
+                            color: theme.textDim
+                            renderType: Text.NativeRendering
+                        }
+                        Item { Layout.fillWidth: true }
+                        KeyBadge { keyText: "Wheel: Volume  •  R-Click: Next  •  Mid-Click: Prev" }
+                    }
+                }
+
+                // Separator
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.4)
+                }
+
+                // Behavior Toggles & Action Row
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    // Auto-Hide Switch Button
+                    Rectangle {
+                        implicitWidth: autoHideLabel.implicitWidth + 18
+                        implicitHeight: 26
+                        radius: 6
+                        color: root.autoHideOnStop ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
+                        border.color: root.autoHideOnStop ? theme.accent : theme.border
+                        border.width: 1
+
+                        Text {
+                            id: autoHideLabel
+                            anchors.centerIn: parent
+                            text: "Auto-Hide: " + (root.autoHideOnStop ? "ON" : "OFF")
+                            font.family: theme.fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                            renderType: Text.NativeRendering
+                            color: root.autoHideOnStop ? theme.accent : theme.textDim
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.autoHideOnStop = !root.autoHideOnStop;
+                                root.saveConfig();
+                            }
+                        }
+                    }
+
+                    // Demo Mode Switch Button
+                    Rectangle {
+                        implicitWidth: demoLabel.implicitWidth + 18
+                        implicitHeight: 26
+                        radius: 6
+                        color: root.demoMode ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
+                        border.color: root.demoMode ? theme.accent : theme.border
+                        border.width: 1
+
+                        Text {
+                            id: demoLabel
+                            anchors.centerIn: parent
+                            text: "Demo: " + (root.demoMode ? "ON" : "OFF")
+                            font.family: theme.fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                            renderType: Text.NativeRendering
+                            color: root.demoMode ? theme.accent : theme.textDim
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.demoMode = !root.demoMode;
+                                lyricProcess.running = false;
+                                restartTimer.restart();
+                            }
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Action: Apply Keybinds to Hyprland
+                    Rectangle {
+                        implicitWidth: syncLabel.implicitWidth + 18
+                        implicitHeight: 26
+                        radius: 6
+                        color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, syncArea.containsMouse ? 0.35 : 0.18)
+                        border.color: theme.accent
+                        border.width: 1
+
+                        Text {
+                            id: syncLabel
+                            anchors.centerIn: parent
+                            text: root.keybindStatusMsg !== "" ? root.keybindStatusMsg : "Sync Hyprland Binds"
+                            font.family: theme.fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                            renderType: Text.NativeRendering
+                            color: theme.accent
+                        }
+
+                        MouseArea {
+                            id: syncArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.syncKeybinds()
+                        }
                     }
                 }
             }
         }
-    }
-
-    // ==========================================
-    // 9. Main Floating Liquid Glass Card
-    // ==========================================
-    Rectangle {
-        id: lyricCard
-        visible: root.effectiveVisible && !root.compact
-        opacity: visible ? 1.0 : 0.0
-        scale: visible ? 1.0 : 0.90
-
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        height: theme.barHeight
 
         // ==========================================
-        // AUTO-RESIZE: Fluid Dynamic Width Animation
+        // 10. UNIFIED MORPHING CAPSULE (Liquid Glass Card)
+        // Seamlessly morphs between Full Lyric Bar and Compact Mini-Pill
         // ==========================================
-        readonly property real computedContentWidth: {
-            const padding = 28;
-            const playWidth = 28 + cardLayout.spacing;
-            const artistWidth = (root.trackArtist !== "" ? (artistBadge.implicitWidth + cardLayout.spacing) : 0);
-            const textWidth = Math.max(120, Math.min(460, lyricMeasure.implicitWidth + 12));
-            const pulseWidth = (root.hasLyrics && root.isPlaying ? (8 + cardLayout.spacing) : 0);
-            const actionsWidth = 74 + cardLayout.spacing;
-            return padding + playWidth + artistWidth + textWidth + pulseWidth + actionsWidth;
-        }
-
-        implicitWidth: Math.max(300, Math.min(780, computedContentWidth))
-
-        Behavior on implicitWidth {
-            NumberAnimation {
-                duration: theme.animMed
-                easing.type: Easing.OutCubic
-            }
-        }
-        Behavior on opacity {
-            NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic }
-        }
-        Behavior on scale {
-            NumberAnimation { duration: theme.animSlow; easing.type: Easing.OutBack }
-        }
-
-        // ==========================================
-        // LIQUID GLASS VISUAL STYLING
-        // ==========================================
-        color: cardMouseArea.containsMouse ? theme.glassBgHover : theme.glassBg
-        radius: theme.cornerRadius
-        clip: true
-
-        Behavior on color { ColorAnimation { duration: theme.animMed } }
-
-        // Dual Border: Subtle glass rim + Accent hover glow
-        border.color: cardMouseArea.containsMouse ? theme.glassBorderHover : theme.glassBorder
-        border.width: 1
-
-        Behavior on border.color { ColorAnimation { duration: theme.animMed } }
-
-        // Top Specular Highlight (Physical Glass Refraction Edge)
         Rectangle {
-            anchors {
-                top: parent.top
-                left: parent.left
-                right: parent.right
-                leftMargin: 12
-                rightMargin: 12
-                topMargin: 1
-            }
-            height: 1
-            radius: 1
-            color: cardMouseArea.containsMouse ? theme.glassHighlight : theme.glassHighlightFaint
-            Behavior on color { ColorAnimation { duration: theme.animMed } }
-        }
+            id: lyricCard
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: !root.anchorTop ? parent.bottom : undefined
+            anchors.top: root.anchorTop ? parent.top : undefined
 
-        // 3D Parallax Tilt Effect on Hover
-        transform: [
-            Rotation {
-                origin.x: lyricCard.width / 2
-                origin.y: lyricCard.height / 2
-                axis { x: 1; y: 0; z: 0 }
-                angle: root.tiltX
-                Behavior on angle { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
-            },
-            Rotation {
-                origin.x: lyricCard.width / 2
-                origin.y: lyricCard.height / 2
-                axis { x: 0; y: 1; z: 0 }
-                angle: root.tiltY
-                Behavior on angle { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
-            }
-        ]
-
-        // Progress bar mini at the bottom
-        Rectangle {
-            anchors.bottom: parent.bottom
-            anchors.left: parent.left
-            anchors.leftMargin: 12
-            height: 2
-            radius: 1
-            width: (parent.width - 24) * Math.max(0.0, Math.min(1.0, root.progress))
-            color: theme.accent
-            opacity: 0.85
-
-            Behavior on width { NumberAnimation { duration: 140 } }
-            Behavior on color { ColorAnimation { duration: theme.animMed } }
-        }
-
-        // MouseArea for interactivity, parallax, and playerctl shortcuts
-        MouseArea {
-            id: cardMouseArea
-            anchors.fill: parent
-            hoverEnabled: true
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-
-            onPositionChanged: mouse => {
-                const nx = (mouse.x / lyricCard.width) - 0.5;
-                const ny = (mouse.y / lyricCard.height) - 0.5;
-                root.tiltX = -ny * 7;
-                root.tiltY = nx * 7;
+            // Computed content width for dynamic content-driven sizing
+            readonly property real fullContentWidth: {
+                const padding = 28;
+                const playWidth = 28 + cardLayout.spacing;
+                const artistWidth = (root.trackArtist !== "" ? (artistBadge.implicitWidth + cardLayout.spacing) : 0);
+                const textWidth = Math.max(120, Math.min(460, lyricMeasure.implicitWidth + 12));
+                const pulseWidth = (root.hasLyrics && root.isPlaying ? (8 + cardLayout.spacing) : 0);
+                const actionsWidth = 74 + cardLayout.spacing;
+                return padding + playWidth + artistWidth + textWidth + pulseWidth + actionsWidth;
             }
 
-            onExited: {
-                root.tiltX = 0;
-                root.tiltY = 0;
-            }
+            readonly property real targetWidth: root.compact ? (theme.pillHeight + 10) : Math.max(300, Math.min(780, fullContentWidth))
+            readonly property real targetHeight: root.compact ? theme.pillHeight : theme.barHeight
+            readonly property real targetRadius: root.compact ? (targetHeight / 2) : theme.cornerRadius
 
-            onClicked: mouse => {
-                if (mouse.button === Qt.MiddleButton) {
-                    mediaProcess.run(["playerctl", "previous"]);
-                } else if (mouse.button === Qt.RightButton) {
-                    mediaProcess.run(["playerctl", "next"]);
+            implicitWidth: targetWidth
+            height: targetHeight
+            radius: targetRadius
+
+            // Apple Dynamic Island fluid spring morphology
+            Behavior on implicitWidth {
+                NumberAnimation {
+                    duration: 460
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.08
+                }
+            }
+            Behavior on height {
+                NumberAnimation {
+                    duration: 380
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.12
+                }
+            }
+            Behavior on radius {
+                NumberAnimation {
+                    duration: 380
+                    easing.type: Easing.OutCubic
                 }
             }
 
-            onWheel: wheel => {
-                if (wheel.angleDelta.y > 0) {
-                    mediaProcess.run(["playerctl", "volume", "0.05+"]);
-                } else if (wheel.angleDelta.y < 0) {
-                    mediaProcess.run(["playerctl", "volume", "0.05-"]);
-                }
-            }
-        }
+            // ==========================================
+            // LIQUID GLASS VISUAL STYLING
+            // ==========================================
+            color: (cardMouseArea.containsMouse || miniArea.containsMouse) ? theme.glassBgHover : theme.glassBg
+            clip: true
 
-        // ==========================================
-        // Card Content Row Layout
-        // ==========================================
-        RowLayout {
-            id: cardLayout
-            anchors.centerIn: parent
-            spacing: 8
+            Behavior on color { ColorAnimation { duration: theme.animMed } }
 
-            // 1. Play / Pause & Disc Button
+            // Dual Border: Subtle glass rim + Accent hover glow
+            border.color: (cardMouseArea.containsMouse || miniArea.containsMouse) ? theme.glassBorderHover : theme.glassBorder
+            border.width: 1
+
+            Behavior on border.color { ColorAnimation { duration: theme.animMed } }
+
+            // Top Specular Highlight (Physical Glass Refraction Edge)
             Rectangle {
-                id: playBtn
-                Layout.alignment: Qt.AlignVCenter
-                implicitWidth: 28
-                implicitHeight: 28
-                radius: 14
-                color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, playArea.containsMouse ? 0.32 : 0.16)
+                anchors.top: parent.top
+                anchors.topMargin: 1
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.max(0, parent.width - (root.compact ? 12 : 24))
+                height: 1
+                radius: 1
+                color: (cardMouseArea.containsMouse || miniArea.containsMouse) ? theme.glassHighlight : theme.glassHighlightFaint
+                Behavior on color { ColorAnimation { duration: theme.animMed } }
+                Behavior on width { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
+            }
 
-                Behavior on color { ColorAnimation { duration: theme.animFast } }
+            // 3D Parallax Tilt Effect on Hover
+            transform: [
+                Rotation {
+                    origin.x: lyricCard.width / 2
+                    origin.y: lyricCard.height / 2
+                    axis { x: 1; y: 0; z: 0 }
+                    angle: root.tiltX
+                    Behavior on angle { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
+                },
+                Rotation {
+                    origin.x: lyricCard.width / 2
+                    origin.y: lyricCard.height / 2
+                    axis { x: 0; y: 1; z: 0 }
+                    angle: root.tiltY
+                    Behavior on angle { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
+                }
+            ]
+
+            // ==========================================
+            // LAYER A: COMPACT MODE CONTENT (Music Note Disc)
+            // ==========================================
+            Item {
+                id: compactLayer
+                anchors.fill: parent
+                opacity: root.compact ? 1.0 : 0.0
+                scale: root.compact ? 1.0 : 0.65
+                visible: opacity > 0.01
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: root.compact ? 280 : 160
+                        easing.type: root.compact ? Easing.OutCubic : Easing.InQuad
+                    }
+                }
+                Behavior on scale {
+                    NumberAnimation {
+                        duration: 380
+                        easing.type: Easing.OutBack
+                        easing.overshoot: 1.25
+                    }
+                }
 
                 Text {
                     anchors.centerIn: parent
                     font.family: theme.iconFont
                     font.pixelSize: theme.fontSizeIcon
                     renderType: Text.NativeRendering
-                    color: theme.accent
-                    text: root.isPlaying ? "󰏤" : "󰐊" // Nerd Font: Pause or Play
+                    color: root.isPlaying ? theme.accent : theme.textDim
+                    text: "󰎆" // Music note icon
                     Behavior on color { ColorAnimation { duration: theme.animFast } }
+
+                    // Subtle breathing pulse when music is playing
+                    SequentialAnimation on scale {
+                        running: root.compact && root.isPlaying
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 1.0; to: 1.12; duration: 900; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 1.12; to: 1.0; duration: 900; easing.type: Easing.InOutSine }
+                    }
                 }
 
                 MouseArea {
-                    id: playArea
+                    id: miniArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: mediaProcess.run(["playerctl", "play-pause"])
+                    onClicked: root.compact = false
                 }
             }
 
-            // 2. Artist Badge (Themed Glass Pill)
-            Rectangle {
-                id: artistBadge
-                visible: root.trackArtist !== ""
-                Layout.alignment: Qt.AlignVCenter
-                implicitHeight: 22
-                implicitWidth: artistText.implicitWidth + 14
-                radius: 6
-                color: theme.glassCard
-                border.color: theme.border
-                border.width: 1
-
-                Behavior on color { ColorAnimation { duration: theme.animMed } }
-                Behavior on border.color { ColorAnimation { duration: theme.animMed } }
-
-                Text {
-                    id: artistText
-                    anchors.centerIn: parent
-                    font.family: theme.fontFamily
-                    font.pixelSize: theme.fontSizeSmall
-                    font.bold: true
-                    renderType: Text.NativeRendering
-                    color: theme.textDim
-                    text: root.trackArtist
-                    elide: Text.ElideRight
-                    maximumLineCount: 1
-                    Behavior on color { ColorAnimation { duration: theme.animMed } }
-                }
-            }
-
-            // 3. Divider Dot
-            Rectangle {
-                visible: root.trackArtist !== ""
-                Layout.alignment: Qt.AlignVCenter
-                implicitWidth: 3
-                implicitHeight: 3
-                radius: 1.5
-                color: theme.textFaint
-            }
-
-            // 4. Live Lyric Line Container (High Legibility & Smooth Transition)
+            // ==========================================
+            // LAYER B: FULL BAR CONTENT (Lyrics & Controls)
+            // ==========================================
             Item {
-                id: lyricContainer
-                Layout.alignment: Qt.AlignVCenter
-                Layout.fillWidth: true
-                implicitHeight: 24
-                implicitWidth: Math.min(460, lyricLabel.implicitWidth)
-                clip: true
+                id: fullLayer
+                anchors.fill: parent
+                opacity: root.compact ? 0.0 : 1.0
+                scale: root.compact ? 0.85 : 1.0
+                visible: opacity > 0.01
 
-                Text {
-                    id: lyricLabel
-                    anchors.centerIn: parent
-                    renderType: Text.NativeRendering
-                    font.family: theme.fontFamily
-                    font.pixelSize: theme.fontSizeMain
-                    font.bold: true
-                    // Subtle dark outline/shadow for high legibility over any glass backdrop
-                    style: Text.Outline
-                    styleColor: Qt.rgba(0.0, 0.0, 0.0, 0.55)
-                    color: root.activeLyric !== "" ? theme.text : theme.accent2
-                    text: root.displayedLyric
-                    elide: Text.ElideRight
-                    maximumLineCount: 1
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: root.compact ? 180 : 300
+                        easing.type: root.compact ? Easing.InQuad : Easing.OutCubic
+                    }
+                }
+                Behavior on scale {
+                    NumberAnimation {
+                        duration: 360
+                        easing.type: Easing.OutBack
+                        easing.overshoot: 1.12
+                    }
+                }
 
+                // Mini Progress Bar at bottom
+                Rectangle {
+                    id: progressBar
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    height: 2
+                    radius: 1
+                    color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.45)
+                    width: Math.max(0, (lyricCard.width - 24) * Math.min(1.0, Math.max(0.0, root.progress)))
+                    visible: root.isPlaying && root.duration > 0
+
+                    Behavior on width { NumberAnimation { duration: 180 } }
                     Behavior on color { ColorAnimation { duration: theme.animMed } }
                 }
-            }
 
-            // 5. Synced Lyrics Pulse Indicator
-            Rectangle {
-                visible: root.hasLyrics && root.isPlaying
-                Layout.alignment: Qt.AlignVCenter
-                implicitWidth: 6
-                implicitHeight: 6
-                radius: 3
-                color: theme.accent
+                // MouseArea for interactivity, parallax, and playerctl shortcuts
+                MouseArea {
+                    id: cardMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: !root.compact
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
 
-                Behavior on color { ColorAnimation { duration: theme.animFast } }
+                    onPositionChanged: mouse => {
+                        const nx = (mouse.x / lyricCard.width) - 0.5;
+                        const ny = (mouse.y / lyricCard.height) - 0.5;
+                        root.tiltX = -ny * 7;
+                        root.tiltY = nx * 7;
+                    }
 
-                SequentialAnimation on opacity {
-                    running: root.hasLyrics && root.isPlaying
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 0.35; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 1.0; to: 0.35; duration: 650; easing.type: Easing.InOutSine }
+                    onExited: {
+                        root.tiltX = 0;
+                        root.tiltY = 0;
+                    }
+
+                    onClicked: mouse => {
+                        if (mouse.button === Qt.MiddleButton) {
+                            mediaProcess.run(["playerctl", "previous"]);
+                        } else if (mouse.button === Qt.RightButton) {
+                            mediaProcess.run(["playerctl", "next"]);
+                        }
+                    }
+
+                    onWheel: wheel => {
+                        if (wheel.angleDelta.y > 0) {
+                            mediaProcess.run(["playerctl", "volume", "0.05+"]);
+                        } else if (wheel.angleDelta.y < 0) {
+                            mediaProcess.run(["playerctl", "volume", "0.05-"]);
+                        }
+                    }
+                }
+
+                // Card Content Row Layout
+                RowLayout {
+                    id: cardLayout
+                    anchors.centerIn: parent
+                    spacing: 8
+
+                    // 1. Play / Pause & Disc Button with Apple-style tactile spring
+                    Rectangle {
+                        id: playBtn
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitWidth: 28
+                        implicitHeight: 28
+                        radius: 14
+                        color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, playArea.containsMouse ? 0.32 : 0.16)
+
+                        scale: playArea.pressed ? 0.90 : (playArea.containsMouse ? 1.08 : 1.0)
+
+                        Behavior on color { ColorAnimation { duration: theme.animFast } }
+                        Behavior on scale {
+                            NumberAnimation {
+                                duration: 220
+                                easing.type: Easing.OutBack
+                                easing.overshoot: 1.30
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            font.family: theme.iconFont
+                            font.pixelSize: theme.fontSizeIcon
+                            renderType: Text.NativeRendering
+                            color: theme.accent
+                            text: root.isPlaying ? "󰏤" : "󰐊" // Pause / Play icon
+                            Behavior on color { ColorAnimation { duration: theme.animFast } }
+                        }
+
+                        MouseArea {
+                            id: playArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: mediaProcess.run(["playerctl", "play-pause"])
+                        }
+                    }
+
+                    // 2. Artist Badge (Themed Glass Pill)
+                    Rectangle {
+                        id: artistBadge
+                        visible: root.trackArtist !== ""
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitHeight: 22
+                        implicitWidth: artistText.implicitWidth + 14
+                        radius: 6
+                        color: theme.glassCard
+                        border.color: theme.border
+                        border.width: 1
+
+                        Behavior on color { ColorAnimation { duration: theme.animMed } }
+                        Behavior on border.color { ColorAnimation { duration: theme.animMed } }
+
+                        Text {
+                            id: artistText
+                            anchors.centerIn: parent
+                            font.family: theme.fontFamily
+                            font.pixelSize: theme.fontSizeSmall
+                            font.bold: true
+                            renderType: Text.NativeRendering
+                            color: theme.textDim
+                            text: root.trackArtist
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            Behavior on color { ColorAnimation { duration: theme.animMed } }
+                        }
+                    }
+
+                    // 3. Divider Dot
+                    Rectangle {
+                        visible: root.trackArtist !== ""
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitWidth: 3
+                        implicitHeight: 3
+                        radius: 1.5
+                        color: theme.textFaint
+                    }
+
+                    // 4. Live Lyric Line Container (High Legibility & Smooth Transition)
+                    Item {
+                        id: lyricContainer
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.fillWidth: true
+                        implicitHeight: 24
+                        implicitWidth: Math.min(460, lyricLabel.implicitWidth)
+                        clip: true
+
+                        Text {
+                            id: lyricLabel
+                            anchors.centerIn: parent
+                            renderType: Text.NativeRendering
+                            font.family: theme.fontFamily
+                            font.pixelSize: theme.fontSizeMain
+                            font.bold: true
+                            // Contrast outline shadow for crisp legibility over any wallpaper
+                            style: Text.Outline
+                            styleColor: Qt.rgba(0.0, 0.0, 0.0, 0.55)
+                            color: root.activeLyric !== "" ? theme.text : theme.accent2
+                            text: root.displayedLyric
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+
+                            Behavior on color { ColorAnimation { duration: theme.animMed } }
+                        }
+                    }
+
+                    // 5. Synced Lyrics Pulse Indicator
+                    Rectangle {
+                        visible: root.hasLyrics && root.isPlaying
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitWidth: 6
+                        implicitHeight: 6
+                        radius: 3
+                        color: theme.accent
+
+                        Behavior on color { ColorAnimation { duration: theme.animFast } }
+
+                        SequentialAnimation on opacity {
+                            running: root.hasLyrics && root.isPlaying
+                            loops: Animation.Infinite
+                            NumberAnimation { from: 0.35; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                            NumberAnimation { from: 1.0; to: 0.35; duration: 650; easing.type: Easing.InOutSine }
+                        }
+                    }
+
+                    // 6. Action Buttons (Settings, Minimize & Close)
+                    Row {
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 2
+
+                        GlassActionBtn {
+                            icon: "󰒓" // Settings
+                            hoverColor: theme.accent
+                            onClicked: root.settingsOpen = !root.settingsOpen
+                        }
+
+                        GlassActionBtn {
+                            icon: "󰍹" // Compress / Pill
+                            onClicked: root.compact = true
+                        }
+
+                        GlassActionBtn {
+                            icon: "󰅖" // Close / X
+                            hoverColor: theme.danger
+                            onClicked: root.showing = false
+                        }
+                    }
                 }
             }
-
-            // 6. Action Buttons (Settings, Minimize & Close)
-            Row {
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 2
-
-                GlassActionBtn {
-                    icon: "󰒓" // Nerd Font: Settings / Cog
-                    hoverColor: theme.accent
-                    onClicked: root.settingsOpen = !root.settingsOpen
-                }
-
-                GlassActionBtn {
-                    icon: "󰍹" // Nerd Font: Compress / Pill
-                    onClicked: root.compact = true
-                }
-
-                GlassActionBtn {
-                    icon: "󰅖" // Nerd Font: Close / X
-                    hoverColor: theme.danger
-                    onClicked: root.showing = false
-                }
-            }
-        }
-    }
-
-    // ==========================================
-    // 10. Compact Mode: Mini Liquid Glass Pill
-    // ==========================================
-    Rectangle {
-        id: miniPill
-        visible: root.effectiveVisible && root.compact
-        opacity: visible ? 1.0 : 0.0
-        scale: visible ? 1.0 : 0.85
-
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        height: theme.pillHeight
-        implicitWidth: 42
-
-        radius: theme.pillHeight / 2
-        color: miniArea.containsMouse ? theme.glassBgHover : theme.glassBg
-        border.color: miniArea.containsMouse ? theme.glassBorderHover : theme.glassBorder
-        border.width: 1
-
-        Behavior on color { ColorAnimation { duration: theme.animMed } }
-        Behavior on opacity { NumberAnimation { duration: theme.animFast } }
-        Behavior on scale { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutBack } }
-        Behavior on border.color { ColorAnimation { duration: theme.animFast } }
-
-        Text {
-            anchors.centerIn: parent
-            font.family: theme.iconFont
-            font.pixelSize: theme.fontSizeIcon
-            renderType: Text.NativeRendering
-            color: root.isPlaying ? theme.accent : theme.textDim
-            text: "󰎆" // Nerd Font: Music Note
-            Behavior on color { ColorAnimation { duration: theme.animFast } }
-        }
-
-        MouseArea {
-            id: miniArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.compact = false
         }
     }
 }
