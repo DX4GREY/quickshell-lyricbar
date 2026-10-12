@@ -1,125 +1,160 @@
-# Quickshell Floating LyricBar (Liquid Glass)
+# Quickshell Floating LyricBar 🎵 (Liquid Glass)
 
-Komponen floating lyric bar modern berbasis **Quickshell** untuk Wayland / Hyprland dengan integrasi efek visual **Apple Liquid Glass** (`hyprglass`), layout dinamis auto-resize berbasis timestamp lirik aktif, animasi transisi fluida, dan sinkronisasi palet tema sistem secara otomatis.
-
----
-
-## Fitur Utama
-
-1. **Integrasi Plugin Liquid Glass (`hyprglass`):**
-   - Menggunakan namespace layer shell `quickshell:lyricbar` yang terhubung langsung dengan plugin compositor HyprGlass (`preset = "pomme"`).
-   - Efek visual kaca berlapis: frosted glass background translucent, garis specular highlight di bibir atas, efek pembiasan (refraction), dan bayangan elevasi.
-   - Efek 3D Parallax Tilt interaktif saat kursor mouse bergerak di atas kapsul.
-
-2. **Perilaku Layout Dinamis (Content-Driven Auto-Resize):**
-   - Terkoneksi ke MPRIS media player (Spotify, Amberol, MPD, VLC, Browser, dll.) dan API lirik tersinkronisasi (LRCLIB & local `.lrc`).
-   - Lebar container menyesuaikan secara dinamis mengikuti panjang teks lirik aktif detik tersebut secara presisi.
-   - Dilengkapi batas minimum dan maksimum yang proporsional serta text eliding aman.
-
-3. **Animasi & Transisi Fluida:**
-   - **Resize Halus:** Saat panjang lirik berubah, dimensi lebar kapsul melebar/menyusut dengan kurva animasi `Easing.OutCubic` khas dinamika fluida, tanpa patah-patah atau resize instan.
-   - **Transisi Teks Mulus:** Pergantian baris lirik menggunakan kombinasi *subtle vertical slide* (-7px ke 0) dan *cross-fade* (opacity 0.0 ke 1.0).
-
-4. **Karakteristik Tampilan Floating & High Legibility:**
-   - Mengambang bebas di layar (`WlrLayershell.layer: WlrLayer.Overlay`).
-   - Fitur **Click Mask (`Region`)**: Hanya area kapsul aktif yang menerima interaksi klik mouse; area transparan di sekitarnya tembus pandang dan tembus klik (*click-through*) 100% ke jendela di bawahnya.
-   - Teks lirik sangat kontras dan tajam dengan rendering native (`Text.NativeRendering`), tipografi tegas, dan outline pelindung kontras di atas latar belakang kaca terang maupun gelap.
-
-5. **Sinkronisasi Tema Real-Time:**
-   - Membaca konfigurasi palet aktif dari `~/.cache/43pr/quickshell-theme.json` dan `~/.local/state/quickshell/user/generated/colors.json` secara reaktif via `FileView`.
-   - Warna teks, aksen, border, dan kaca otomatis berubah seketika saat wallpaper atau tema diganti tanpa perlu me-restart Quickshell.
-
-6. **Interaktivitas & Kontrol Media:**
-   - **Klik Tombol Play/Pause**: Memulai / menjeda musik (`playerctl play-pause`).
-   - **Scroll Wheel**: Menaikkan / menurunkan volume (`playerctl volume +/-`).
-   - **Klik Tengah (Middle Click)**: Lagu sebelumnya (`previous`).
-   - **Klik Kanan**: Lagu berikutnya (`next`).
-   - **Tombol Minimize / Compact**: Mengecilkan bar menjadi mini pill kapsul mungil dengan ikon nada musik.
-   - **Indikator Pulsa Lirik**: Titik aksen berdenyut halus menandakan lirik aktif tersinkronisasi per detik.
+An elegant, modern floating synced lyric bar built with **Quickshell** for Wayland / Hyprland desktops. Features **Apple Liquid Glass** (`hyprglass`) hardware refraction effects, dynamic content-driven auto-resizing per second, fluid spring/cubic easing transitions, and instant real-time theme & color synchronization.
 
 ---
 
-## Struktur File
+## 📸 Preview
 
-```text
-quickshell-lyricbar/
-├── shell.qml             # Entry point utama Quickshell ShellRoot
-├── FloatingLyricBar.qml  # Komponen PanelWindow Floating LyricBar
-├── LyricTheme.qml        # Service tema & Liquid Glass palette loader
-├── lyric_listener.py     # Daemon pemantau MPRIS & sync timestamp LRCLIB / local LRC
-├── run.sh                # Skrip peluncur interaktif (normal, demo, daemon, kill)
-└── README.md             # Dokumentasi
+![Quickshell Floating LyricBar Preview](assets/preview.png)
+
+*Floating liquid glass lyric capsule displaying live synced lyrics with artist pill, playback controls, and synced pulse indicator.*
+
+![Compact Mini Pill Mode](assets/compact.png)
+
+*Compact mini-pill mode with music note icon and fluid expanding/compressing bounce animation.*
+
+---
+
+## ⚡ One-Line Installer
+
+Install directly into your Quickshell environment with a single command:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/DX4GREY/quickshell-lyricbar/main/install.sh)"
+```
+
+### Or Install Locally:
+
+```bash
+git clone https://github.com/DX4GREY/quickshell-lyricbar.git
+cd quickshell-lyricbar
+./install.sh
+```
+
+The installer will:
+1. Verify system dependencies (`quickshell`, `python3`, `dbus` / `playerctl`).
+2. Install component files to `~/.config/quickshell/lyricbar/`.
+3. Create the `quickshell-lyricbar` executable wrapper in `~/.local/bin/`.
+4. Automatically configure the `hyprglass` composition layer rule in `~/.config/hypr/custom/general.lua`.
+
+---
+
+## ✨ Features
+
+- **Liquid Glass Integration (`hyprglass`):**
+  - Fully mapped to the `quickshell:lyricbar` layer shell namespace using the Apple Liquid Glass `pomme` preset.
+  - Realistic frosted translucency, specular rim highlight at the top edge, and interactive 3D parallax tilt on mouse hover.
+- **Dynamic Content-Driven Auto-Resize:**
+  - Connects to any MPRIS media player (Spotify, Amberol, MPD, VLC, Chrome, Firefox, Cider, etc.).
+  - Fetches synchronized `.lrc` timestamps via [LRCLIB.net](https://lrclib.net) or local audio folders.
+  - Container width smoothly expands and contracts based on the exact character width of each active lyric line.
+- **Fluid Dimension & Text Transitions:**
+  - **Fluid Resize:** Card width smoothly glides with `Easing.OutCubic` curve — zero abrupt resizing or snapping.
+  - **Subtitle-style Transition:** Lyric text changes using a delicate cross-fade (`opacity 0.0 → 1.0`) combined with a vertical slide (`y: -7px → 0px`).
+- **High Text Legibility:**
+  - Crisp native rendering (`Text.NativeRendering`), bold weights, and contrast outline protection to ensure readability over any bright or dark wallpaper.
+  - Transparent click mask (`Region`) ensures that only the visible capsule captures mouse clicks, while all surrounding areas remain 100% click-through.
+- **Real-Time Reactive Theme Sync:**
+  - Re-evaluates live colors from `~/.cache/43pr/quickshell-theme.json` and `~/.local/state/quickshell/user/generated/colors.json`.
+  - When you switch wallpapers or generate new palettes via Matugen / 43PR, all colors smoothly cross-fade to the new palette without restarting.
+- **Interactive Media Controls:**
+  - **Play / Pause**: Click the disc / play-pause button (`playerctl play-pause`).
+  - **Volume Control**: Scroll the mouse wheel over the capsule (`playerctl volume +/-`).
+  - **Next / Previous Track**: Right-click for Next track; Middle-click for Previous track.
+  - **Mini Pill Mode**: Minimize into a compact glass disc with music icon; click to expand back.
+  - **Lyric Pulse Dot**: Subtle pulsing dot indicates active real-time synchronized lyrics.
+
+---
+
+## 🚀 How to Run
+
+After installation, you can launch the LyricBar from anywhere:
+
+```bash
+# Run in foreground (interactive)
+quickshell-lyricbar
+
+# Run in background (daemon)
+quickshell-lyricbar --background
+
+# Run in Demo mode (test animations with sample synchronized song)
+quickshell-lyricbar --demo
+
+# Stop any running instances
+quickshell-lyricbar --kill
+```
+
+You can also run it directly via the standard Quickshell CLI:
+```bash
+qs -c lyricbar
 ```
 
 ---
 
-## Cara Menjalankan
+## ⌨️ Hyprland Integration
 
-### 1. Menjalankan secara Langsung (Mode Normal MPRIS)
-Pastikan media player Anda sedang memutar lagu:
-```bash
-./run.sh
-```
-Atau melalui Quickshell CLI:
-```bash
-qs -p /home/dx4white/MyProject/quickshell-lyricbar
-```
+### 1. Autostart on Login
+Add this line to your `~/.config/hypr/hyprland/execs.lua` or `hyprland.conf`:
 
-### 2. Mode Demo (Pengujian Animasi & Auto-Resize Tanpa Player)
-Jika tidak ada lagu yang sedang diputar dan Anda ingin menguji transisi animasi & efek Liquid Glass:
-```bash
-./run.sh --demo
-```
-
-### 3. Menjalankan di Latar Belakang (Background Daemon)
-```bash
-./run.sh --background
-```
-
-### 4. Menghentikan LyricBar yang Sedang Berjalan
-```bash
-./run.sh --kill
-```
-
----
-
-## Kontrol Melalui IPC (Terminal / Keybinding Hyprland)
-
-Anda dapat mengirimkan perintah kontrol ke LyricBar secara langsung melalui Quickshell IPC:
-
-```bash
-# Toggle tampilkan / sembunyikan LyricBar
-qs ipc call lyricbar toggle
-
-# Sembunyikan LyricBar
-qs ipc call lyricbar hide
-
-# Tampilkan LyricBar
-qs ipc call lyricbar show
-
-# Toggle antara mode bar penuh dan mode mini pill
-qs ipc call lyricbar toggleMini
-
-# Kontrol media playback
-qs ipc call lyricbar playPause
-qs ipc call lyricbar next
-qs ipc call lyricbar prev
-```
-
-### Contoh Integrasi Keybind Hyprland (`hyprland.conf` atau `custom/keybinds.lua`):
 ```lua
--- Toggle Lyric Bar dengan SUPER + L
-bind = SUPER, L, exec, qs ipc call lyricbar toggle
--- Toggle Mini Pill dengan SUPER + ALT + L
-bind = SUPER ALT, L, exec, qs ipc call lyricbar toggleMini
+-- Autostart Quickshell LyricBar
+exec-once = quickshell-lyricbar --background
+```
+
+### 2. Keybindings & IPC Controls
+Control the LyricBar using Quickshell IPC in your `hyprland.conf` or `custom/keybinds.lua`:
+
+```lua
+-- Toggle LyricBar visibility (Super + L)
+bind = SUPER, L, exec, qs -c lyricbar ipc call lyricbar toggle
+
+-- Toggle Compact Mini-Pill mode (Super + Alt + L)
+bind = SUPER ALT, L, exec, qs -c lyricbar ipc call lyricbar toggleMini
+
+-- Media controls
+bind = , XF86AudioPlay, exec, qs -c lyricbar ipc call lyricbar playPause
+```
+
+### 3. IPC Commands Reference
+| Command | Action |
+| :--- | :--- |
+| `qs -c lyricbar ipc call lyricbar toggle` | Toggle visibility of the LyricBar |
+| `qs -c lyricbar ipc call lyricbar show` | Show LyricBar |
+| `qs -c lyricbar ipc call lyricbar hide` | Hide LyricBar |
+| `qs -c lyricbar ipc call lyricbar toggleMini` | Toggle between full bar and compact mini pill |
+| `qs -c lyricbar ipc call lyricbar playPause` | Toggle play / pause |
+| `qs -c lyricbar ipc call lyricbar next` | Skip to next track |
+| `qs -c lyricbar ipc call lyricbar prev` | Return to previous track |
+| `qs -c lyricbar ipc call lyrictheme reload` | Force immediate theme re-read |
+
+---
+
+## 🪟 HyprGlass Configuration
+
+The installer automatically ensures this rule is registered in `~/.config/hypr/custom/general.lua`:
+
+```lua
+if hl.plugin.hyprglass then
+    local hg = hl.plugin.hyprglass
+    -- Quickshell Floating LyricBar (Apple Liquid Glass)
+    hg.layer("quickshell:lyricbar", { preset = "pomme", mask_threshold = 0.01, mask_feather = 0.45 })
+end
 ```
 
 ---
 
-## Konfigurasi HyprGlass
+## 🗑️ Uninstallation
 
-Aturan HyprGlass untuk `quickshell:lyricbar` sudah terdaftar di `~/.config/hypr/custom/general.lua`:
-```lua
-hg.layer("quickshell:lyricbar", { preset = "pomme", mask_threshold = 0.01, mask_feather = 0.45 })
+To remove Quickshell LyricBar:
+
+```bash
+quickshell-lyricbar --kill
+./install.sh --uninstall
 ```
-Preset `pomme` memberikan refraksi optik cair (liquid glass) khas macOS/iOS dengan blur transmisi tinggi di balik jendela floating.
+
+---
+
+## 📄 License
+
+MIT License. Designed for Quickshell & Hyprland.
