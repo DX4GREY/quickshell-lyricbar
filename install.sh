@@ -143,6 +143,7 @@ cp -f "${SCRIPT_DIR}/LyricTheme.qml" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/lyric_listener.py" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/shell.qml" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/run.sh" "$TARGET_DIR/"
+[[ -f "${SCRIPT_DIR}/config.json" ]] && cp -n "${SCRIPT_DIR}/config.json" "$TARGET_DIR/" || true
 
 chmod +x "${TARGET_DIR}/lyric_listener.py"
 chmod +x "${TARGET_DIR}/run.sh"

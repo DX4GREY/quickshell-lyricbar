@@ -24,6 +24,9 @@ PanelWindow {
     property bool compact: false
     property bool autoHideOnStop: false
     property bool demoMode: Quickshell.env("QS_LYRIC_DEMO") === "1"
+    property bool settingsOpen: false
+    property bool anchorTop: false
+    property string keybindStatusMsg: ""
 
     // 3D Parallax Tilt
     property real tiltX: 0.0
@@ -59,38 +62,74 @@ PanelWindow {
     // 3. Layer Shell Window Positioning & Click Mask
     // ==========================================
     anchors {
-        bottom: true
+        top: root.anchorTop
+        bottom: !root.anchorTop
         left: true
         right: true
     }
     margins {
-        bottom: 28
+        top: root.anchorTop ? 28 : 0
+        bottom: !root.anchorTop ? 28 : 0
     }
-    implicitHeight: theme.barHeight + 16
+    implicitHeight: root.settingsOpen ? 370 : (theme.barHeight + 16)
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
+
+    Behavior on implicitHeight {
+        NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic }
+    }
 
     // HyprGlass layer integration
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:lyricbar"
 
-    // Click mask: Hanya area card yang menangkap mouse click
+    // Click mask: Hanya area card / modal aktif yang menangkap mouse click
     mask: Region {
-        item: root.effectiveVisible ? (root.compact ? miniPill : lyricCard) : null
+        item: root.effectiveVisible ? (root.compact ? miniPill : (root.settingsOpen ? settingsModalWrapper : lyricCard)) : null
+    }
+
+    Item {
+        id: settingsModalWrapper
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        width: Math.max(settingsCard.width, lyricCard.width)
+        height: root.settingsOpen ? (settingsCard.height + lyricCard.height + 12) : lyricCard.height
     }
 
     // ==========================================
-    // 4. IPC Handler (CLI & Keybind Controls)
+    // 4. Global Shortcuts & IPC Handlers
     // ==========================================
+    GlobalShortcut {
+        name: "lyricBarToggle"
+        description: "Toggle Quickshell Floating LyricBar"
+        onPressed: root.showing = !root.showing
+    }
+
+    GlobalShortcut {
+        name: "lyricBarToggleMini"
+        description: "Toggle LyricBar compact mini-pill"
+        onPressed: root.compact = !root.compact
+    }
+
+    GlobalShortcut {
+        name: "lyricBarToggleSettings"
+        description: "Toggle LyricBar settings modal"
+        onPressed: root.settingsOpen = !root.settingsOpen
+    }
+
     IpcHandler {
         target: "lyricbar"
         function toggle(): void { root.showing = !root.showing; }
         function show(): void { root.showing = true; }
         function hide(): void { root.showing = false; }
         function toggleMini(): void { root.compact = !root.compact; }
+        function openSettings(): void { root.settingsOpen = true; }
+        function closeSettings(): void { root.settingsOpen = false; }
+        function toggleSettings(): void { root.settingsOpen = !root.settingsOpen; }
         function playPause(): void { mediaProcess.run(["playerctl", "play-pause"]); }
         function next(): void { mediaProcess.run(["playerctl", "next"]); }
         function prev(): void { mediaProcess.run(["playerctl", "previous"]); }
+        function applyHyprlandKeybinds(): void { root.syncKeybinds(); }
     }
 
     Process {
@@ -101,8 +140,83 @@ PanelWindow {
         }
     }
 
+    // Process to apply keybindings to Hyprland custom keybinds file
+    Process {
+        id: syncProcess
+        function run(args) {
+            command = args;
+            running = true;
+        }
+        onExited: {
+            root.keybindStatusMsg = "Keybinds Synced!";
+            statusClearTimer.restart();
+        }
+    }
+
+    Timer {
+        id: statusClearTimer
+        interval: 2800
+        repeat: false
+        onTriggered: root.keybindStatusMsg = ""
+    }
+
+    function syncKeybinds() {
+        const cmdScript = `
+        KEYBIND_FILE="$HOME/.config/hypr/custom/keybinds.lua"
+        mkdir -p "$(dirname "$KEYBIND_FILE")"
+        touch "$KEYBIND_FILE"
+        if ! grep -q "quickshell-lyricbar" "$KEYBIND_FILE"; then
+            cat << 'EOF' >> "$KEYBIND_FILE"
+
+-- Quickshell LyricBar Keybindings
+hl.bind("SUPER, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
+hl.bind("SUPER+ALT, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
+hl.bind("SUPER+CTRL, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
+EOF
+        fi
+        SIG=$(basename /run/user/$(id -u)/hypr/*_* 2>/dev/null || echo "")
+        if [ -n "$SIG" ]; then
+            HYPRLAND_INSTANCE_SIGNATURE=$SIG hyprctl reload >/dev/null 2>&1 || true
+        fi
+        `;
+        syncProcess.run(["bash", "-c", cmdScript]);
+    }
+
     // ==========================================
-    // 5. Lyric Listener Process (MPRIS & LRCLIB)
+    // 5. Config Persistence
+    // ==========================================
+    readonly property string userConfigPath: Quickshell.env("HOME") + "/.config/quickshell/lyricbar/config.json"
+
+    FileView {
+        id: userConfigFile
+        path: root.userConfigPath
+        watchChanges: true
+        onLoadFailed: (error) => {}
+        onLoadedChanged: {
+            if (loaded) {
+                try {
+                    const cfg = JSON.parse(userConfigFile.text());
+                    if (cfg.autoHideOnStop !== undefined) root.autoHideOnStop = cfg.autoHideOnStop;
+                    if (cfg.anchorTop !== undefined) root.anchorTop = cfg.anchorTop;
+                    if (cfg.demoMode !== undefined && Quickshell.env("QS_LYRIC_DEMO") !== "1") root.demoMode = cfg.demoMode;
+                } catch(e) {}
+            }
+        }
+    }
+
+    function saveConfig() {
+        const cfg = {
+            "autoHideOnStop": root.autoHideOnStop,
+            "anchorTop": root.anchorTop,
+            "demoMode": root.demoMode
+        };
+        try {
+            userConfigFile.setText(JSON.stringify(cfg, null, 2));
+        } catch(e) {}
+    }
+
+    // ==========================================
+    // 6. Lyric Listener Process (MPRIS & LRCLIB)
     // ==========================================
     readonly property string listenerScriptPath: {
         const localPath = String(Qt.resolvedUrl("lyric_listener.py")).replace(/^file:\/\//, "");
@@ -155,7 +269,7 @@ PanelWindow {
     }
 
     // ==========================================
-    // 6. Smooth Text Transition (Fade & Slide)
+    // 7. Smooth Text Transition (Fade & Slide)
     // ==========================================
     onTargetLyricChanged: {
         if (targetLyric === displayedLyric) return;
@@ -249,8 +363,281 @@ PanelWindow {
         }
     }
 
+    // Keyboard Key badge component for Settings Modal
+    component KeyBadge: Rectangle {
+        id: kbadge
+        property string keyText: ""
+        implicitWidth: klabel.implicitWidth + 14
+        implicitHeight: 22
+        radius: 5
+        color: Qt.rgba(theme.bgCard.r, theme.bgCard.g, theme.bgCard.b, 0.6)
+        border.color: theme.glassBorder
+        border.width: 1
+
+        Text {
+            id: klabel
+            anchors.centerIn: parent
+            text: kbadge.keyText
+            font.family: theme.fontFamily
+            font.pixelSize: 10
+            font.bold: true
+            renderType: Text.NativeRendering
+            color: theme.accent
+        }
+    }
+
     // ==========================================
-    // 7. Main Floating Liquid Glass Card
+    // 8. Settings Modal (Keybinds & Preferences)
+    // ==========================================
+    Rectangle {
+        id: settingsCard
+        visible: opacity > 0
+        opacity: root.settingsOpen ? 1.0 : 0.0
+        scale: root.settingsOpen ? 1.0 : 0.92
+
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: lyricCard.top
+        anchors.bottomMargin: 10
+
+        width: 480
+        height: 270
+        radius: 16
+        color: theme.glassBg
+        border.color: theme.glassBorder
+        border.width: 1
+        clip: true
+
+        Behavior on opacity { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
+        Behavior on scale { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutBack } }
+        Behavior on color { ColorAnimation { duration: theme.animMed } }
+        Behavior on border.color { ColorAnimation { duration: theme.animMed } }
+
+        // Top Specular Highlight line
+        Rectangle {
+            anchors {
+                top: parent.top
+                left: parent.left
+                right: parent.right
+                margins: 1
+            }
+            height: 1
+            color: theme.glassHighlight
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 14
+            spacing: 8
+
+            // Header Row
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: "󰒓"
+                    font.family: theme.iconFont
+                    font.pixelSize: 14
+                    renderType: Text.NativeRendering
+                    color: theme.accent
+                }
+
+                Text {
+                    text: "LyricBar Settings & Keybinds"
+                    font.family: theme.fontFamily
+                    font.pixelSize: 12
+                    font.bold: true
+                    renderType: Text.NativeRendering
+                    color: theme.text
+                }
+
+                Item { Layout.fillWidth: true }
+
+                GlassActionBtn {
+                    icon: "󰅖"
+                    hoverColor: theme.danger
+                    onClicked: root.settingsOpen = false
+                }
+            }
+
+            // Separator
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.4)
+            }
+
+            // Keybindings Section Table
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 5
+
+                // Row: Toggle Visibility
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Toggle LyricBar"
+                        font.family: theme.fontFamily
+                        font.pixelSize: 11
+                        color: theme.textDim
+                        renderType: Text.NativeRendering
+                    }
+                    Item { Layout.fillWidth: true }
+                    KeyBadge { keyText: "SUPER + L" }
+                }
+
+                // Row: Mini Pill Mode
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Compact Mini-Pill"
+                        font.family: theme.fontFamily
+                        font.pixelSize: 11
+                        color: theme.textDim
+                        renderType: Text.NativeRendering
+                    }
+                    Item { Layout.fillWidth: true }
+                    KeyBadge { keyText: "SUPER + ALT + L" }
+                }
+
+                // Row: Settings Modal
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Open / Close Settings"
+                        font.family: theme.fontFamily
+                        font.pixelSize: 11
+                        color: theme.textDim
+                        renderType: Text.NativeRendering
+                    }
+                    Item { Layout.fillWidth: true }
+                    KeyBadge { keyText: "SUPER + CTRL + L" }
+                }
+
+                // Row: Media controls
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Media Shortcuts"
+                        font.family: theme.fontFamily
+                        font.pixelSize: 11
+                        color: theme.textDim
+                        renderType: Text.NativeRendering
+                    }
+                    Item { Layout.fillWidth: true }
+                    KeyBadge { keyText: "Wheel: Volume  •  R-Click: Next  •  Mid-Click: Prev" }
+                }
+            }
+
+            // Separator
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.4)
+            }
+
+            // Behavior Toggles & Action Row
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                // Auto-Hide Switch Button
+                Rectangle {
+                    implicitWidth: autoHideLabel.implicitWidth + 18
+                    implicitHeight: 26
+                    radius: 6
+                    color: root.autoHideOnStop ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
+                    border.color: root.autoHideOnStop ? theme.accent : theme.border
+                    border.width: 1
+
+                    Text {
+                        id: autoHideLabel
+                        anchors.centerIn: parent
+                        text: "Auto-Hide: " + (root.autoHideOnStop ? "ON" : "OFF")
+                        font.family: theme.fontFamily
+                        font.pixelSize: 10
+                        font.bold: true
+                        renderType: Text.NativeRendering
+                        color: root.autoHideOnStop ? theme.accent : theme.textDim
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.autoHideOnStop = !root.autoHideOnStop;
+                            root.saveConfig();
+                        }
+                    }
+                }
+
+                // Demo Mode Switch Button
+                Rectangle {
+                    implicitWidth: demoLabel.implicitWidth + 18
+                    implicitHeight: 26
+                    radius: 6
+                    color: root.demoMode ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
+                    border.color: root.demoMode ? theme.accent : theme.border
+                    border.width: 1
+
+                    Text {
+                        id: demoLabel
+                        anchors.centerIn: parent
+                        text: "Demo: " + (root.demoMode ? "ON" : "OFF")
+                        font.family: theme.fontFamily
+                        font.pixelSize: 10
+                        font.bold: true
+                        renderType: Text.NativeRendering
+                        color: root.demoMode ? theme.accent : theme.textDim
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.demoMode = !root.demoMode;
+                            lyricProcess.running = false;
+                            restartTimer.restart();
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                // Action: Apply Keybinds to Hyprland
+                Rectangle {
+                    implicitWidth: syncLabel.implicitWidth + 18
+                    implicitHeight: 26
+                    radius: 6
+                    color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, syncArea.containsMouse ? 0.35 : 0.18)
+                    border.color: theme.accent
+                    border.width: 1
+
+                    Text {
+                        id: syncLabel
+                        anchors.centerIn: parent
+                        text: root.keybindStatusMsg !== "" ? root.keybindStatusMsg : "Sync Hyprland Binds"
+                        font.family: theme.fontFamily
+                        font.pixelSize: 10
+                        font.bold: true
+                        renderType: Text.NativeRendering
+                        color: theme.accent
+                    }
+
+                    MouseArea {
+                        id: syncArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.syncKeybinds()
+                    }
+                }
+            }
+        }
+    }
+
+    // ==========================================
+    // 9. Main Floating Liquid Glass Card
     // ==========================================
     Rectangle {
         id: lyricCard
@@ -271,11 +658,11 @@ PanelWindow {
             const artistWidth = (root.trackArtist !== "" ? (artistBadge.implicitWidth + cardLayout.spacing) : 0);
             const textWidth = Math.max(120, Math.min(460, lyricMeasure.implicitWidth + 12));
             const pulseWidth = (root.hasLyrics && root.isPlaying ? (8 + cardLayout.spacing) : 0);
-            const actionsWidth = 50 + cardLayout.spacing;
+            const actionsWidth = 74 + cardLayout.spacing;
             return padding + playWidth + artistWidth + textWidth + pulseWidth + actionsWidth;
         }
 
-        implicitWidth: Math.max(280, Math.min(760, computedContentWidth))
+        implicitWidth: Math.max(300, Math.min(780, computedContentWidth))
 
         Behavior on implicitWidth {
             NumberAnimation {
@@ -515,10 +902,16 @@ PanelWindow {
                 }
             }
 
-            // 6. Action Buttons (Minimize & Close)
+            // 6. Action Buttons (Settings, Minimize & Close)
             Row {
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 2
+
+                GlassActionBtn {
+                    icon: "󰒓" // Nerd Font: Settings / Cog
+                    hoverColor: theme.accent
+                    onClicked: root.settingsOpen = !root.settingsOpen
+                }
 
                 GlassActionBtn {
                     icon: "󰍹" // Nerd Font: Compress / Pill
@@ -535,7 +928,7 @@ PanelWindow {
     }
 
     // ==========================================
-    // 8. Compact Mode: Mini Liquid Glass Pill
+    // 10. Compact Mode: Mini Liquid Glass Pill
     // ==========================================
     Rectangle {
         id: miniPill
