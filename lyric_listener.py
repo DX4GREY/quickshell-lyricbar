@@ -2,7 +2,7 @@
 """
 lyric_listener.py
 Helper script for Quickshell Floating LyricBar widget.
-Monitors MPRIS players (Spotify, Amberol, MPD, VLC, Chrome, Firefox, Cider, etc.),
+Monitors MPRIS players (Spotify, Amberol, MPD, VLC, Chrome, Firefox, Cider, YouTube Music, etc.),
 synchronizes timestamps from .lrc lyrics (local search & LRCLIB API),
 and streams the active line to stdout in real-time as JSON.
 Includes --demo mode for testing animations and auto-resizing.
@@ -32,8 +32,114 @@ LOCAL_LYRIC_DIRS = [
 LYRIC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def clean_track_metadata(raw_title: str, raw_artist: str = "", album: str = "", url: str = ""):
+    """
+    Cleans and normalizes track metadata, especially from web browsers (Chrome, Firefox, Chromium,
+    Brave, Zen) playing YouTube Music, YouTube, Soundcloud, Bandcamp, etc.
+    Extracts real artist & title from complex video titles (e.g. 'Artist - Song (Official Video)').
+    Strips browser suffixes, Topic tags, VEVO suffixes, and video tags.
+    """
+    if not raw_title:
+        return "", ""
+
+    title = raw_title.strip()
+    artist = raw_artist.strip() if raw_artist else ""
+
+    # 1. Strip web platform & browser suffixes from title
+    browser_suffixes = [
+        r"\s+-\s+YouTube\s+Music$",
+        r"\s+-\s+YouTube$",
+        r"\s+-\s+(?:Mozilla\s+)?Firefox$",
+        r"\s+-\s+Google\s+Chrome$",
+        r"\s+-\s+Chromium$",
+        r"\s+-\s+Brave$",
+        r"\s+-\s+Zen\s+Browser$",
+    ]
+    for s in browser_suffixes:
+        title = re.sub(s, "", title, flags=re.IGNORECASE)
+
+    # 2. Clean generic or browser artist names
+    generic_artists = [
+        "youtube", "youtube music", "google chrome", "chrome",
+        "firefox", "mozilla firefox", "chromium", "brave", "zen",
+        "unknown artist", "various artists", "web browser"
+    ]
+    if artist.lower() in generic_artists:
+        artist = ""
+
+    # 3. Clean auto-generated Topic / VEVO artist suffixes
+    if artist:
+        artist = re.sub(r"\s+-\s+Topic$", "", artist, flags=re.IGNORECASE)
+        artist = re.sub(r"(?<=[a-zA-Z0-9])VEVO$", "", artist, flags=re.IGNORECASE)
+
+    # 4. Remove common video junk tags in titles
+    video_junk = [
+        r"\(Official\s+(?:Music\s+)?Video\)",
+        r"\[Official\s+(?:Music\s+)?Video\]",
+        r"\(Official\s+Audio\)",
+        r"\[Official\s+Audio\]",
+        r"\(Official\s+Lyric\s+Video\)",
+        r"\[Official\s+Lyric\s+Video\]",
+        r"\(Official\s+Visualizer\)",
+        r"\[Official\s+Visualizer\]",
+        r"\(Lyric\s+Video\)",
+        r"\[Lyric\s+Video\]",
+        r"\(Lyrics\)",
+        r"\[Lyrics\]",
+        r"\(Visualizer\)",
+        r"\[Visualizer\]",
+        r"\(Audio\)",
+        r"\[Audio\]",
+        r"\(Video\)",
+        r"\[Video\]",
+        r"\(M/?V\)",
+        r"\[M/?V\]",
+        r"\((?:HD|4K|HQ|UHD)\)",
+        r"\[(?:HD|4K|HQ|UHD)\]",
+        r"\(Color\s+Coded\s+Lyrics\)",
+        r"\(slowed\s*\+\s*reverb\)",
+        r"\(sped\s+up\)",
+        r"\(speed\s+up\)",
+        r"\(Audio\s*/\s*Lyrics\)",
+        r"\(Full\s+Audio\)",
+        r"\[Full\s+Audio\]",
+        r"\(Performance\s+Video\)",
+        r"\[Performance\s+Video\]",
+        r"\(Clip\s+Officiel\)",
+        r"\[Clip\s+Officiel\]",
+        r"\(Video\s+Oficial\)",
+        r"\[Video\s+Oficial\]",
+        r"\(Official\)",
+        r"\[Official\]",
+    ]
+    for junk in video_junk:
+        title = re.sub(junk, "", title, flags=re.IGNORECASE)
+
+    # 5. Check if title is formatted as 'Artist - Song Title' (ubiquitous on YouTube)
+    split_match = re.search(r"\s+[-–—]\s+", title)
+    if split_match:
+        cand_artist = title[:split_match.start()].strip()
+        cand_title = title[split_match.end():].strip()
+        # If artist is missing or matches candidate or artist is channel name
+        if not artist or artist.lower() in cand_artist.lower() or cand_artist.lower() in artist.lower():
+            artist = cand_artist
+            title = cand_title
+
+    # 6. Clean quotes around song titles e.g. Artist 'Song Name'
+    quote_match = re.search(r'^(.*?)\s+["\x27“](.*?)["\x27”]$', title)
+    if quote_match and not artist:
+        artist = quote_match.group(1).strip()
+        title = quote_match.group(2).strip()
+
+    # 7. Normalize spaces
+    title = re.sub(r"\s+", " ", title).strip()
+    artist = re.sub(r"\s+", " ", artist).strip()
+
+    return title, artist
+
+
 def clean_title(title: str) -> str:
-    """Removes common track suffixes like '(Remastered...)', '[feat. ...]' for better search."""
+    """Removes leftover track suffixes for online lyric search."""
     if not title:
         return ""
     cleaned = re.sub(r"\(.*?(?:feat|remaster|version|edition|live|explicit|mono|stereo).*?\)", "", title, flags=re.IGNORECASE)
@@ -115,10 +221,11 @@ def fetch_online_lrc(artist: str, title: str, album: str = "", duration: float =
     """
     Fetches synced LRC from LRCLIB.net (free, fast, open-source synced lyrics API).
     Caches successful fetches locally.
+    Supports both exact matching and search queries for YouTube Music & web browsers.
     """
     clean_t = clean_title(title)
     safe_artist = sanitize_filename(artist)
-    safe_title = sanitize_filename(title)
+    safe_title = sanitize_filename(clean_t or title)
     cache_path = LYRIC_CACHE_DIR / f"{safe_artist} - {safe_title}.lrc"
 
     if cache_path.is_file():
@@ -128,53 +235,72 @@ def fetch_online_lrc(artist: str, title: str, album: str = "", duration: float =
         except Exception:
             pass
 
-    # Try exact get endpoint
-    params = {
-        "artist_name": artist,
-        "track_name": clean_t or title,
-    }
-    if album:
-        params["album_name"] = album
-    if duration > 0:
-        params["duration"] = int(duration)
-
     headers = {"User-Agent": "LyricBar-Quickshell/1.0 (https://github.com/)"}
 
-    try:
-        url = "https://lrclib.net/api/get?" + urllib.parse.urlencode(params)
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            synced = data.get("syncedLyrics")
-            if synced:
-                with open(cache_path, "w", encoding="utf-8") as f:
-                    f.write(synced)
-                return synced
-    except Exception:
-        pass
+    # 1. Try exact get endpoint if artist is known
+    if artist and clean_t:
+        params = {
+            "artist_name": artist,
+            "track_name": clean_t,
+        }
+        if album:
+            params["album_name"] = album
+        if duration > 0:
+            params["duration"] = int(duration)
 
-    # Fallback to search endpoint
-    try:
-        search_query = f"{artist} {clean_t}".strip()
-        url = "https://lrclib.net/api/search?" + urllib.parse.urlencode({"q": search_query})
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
-            results = json.loads(resp.read().decode("utf-8"))
-            if isinstance(results, list) and len(results) > 0:
-                for item in results:
-                    synced = item.get("syncedLyrics")
-                    if synced:
-                        with open(cache_path, "w", encoding="utf-8") as f:
-                            f.write(synced)
-                        return synced
-    except Exception:
-        pass
+        try:
+            url = "https://lrclib.net/api/get?" + urllib.parse.urlencode(params)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                synced = data.get("syncedLyrics")
+                if synced:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        f.write(synced)
+                    return synced
+        except Exception:
+            pass
+
+    # 2. Try search endpoint with queries (handles browser/YouTube tracks)
+    search_queries = []
+    if artist and clean_t:
+        search_queries.append(f"{artist} {clean_t}".strip())
+    if clean_t:
+        search_queries.append(clean_t)
+
+    for q in search_queries:
+        try:
+            url = "https://lrclib.net/api/search?" + urllib.parse.urlencode({"q": q})
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
+                results = json.loads(resp.read().decode("utf-8"))
+                if isinstance(results, list) and len(results) > 0:
+                    candidates = [item for item in results if item.get("syncedLyrics")]
+                    if candidates:
+                        best = None
+                        # Prioritize match with similar duration
+                        if duration > 0:
+                            for c in candidates:
+                                c_dur = float(c.get("duration", 0))
+                                if abs(c_dur - duration) < 5.0:
+                                    best = c
+                                    break
+                        if not best:
+                            best = candidates[0]
+
+                        synced = best.get("syncedLyrics")
+                        if synced:
+                            with open(cache_path, "w", encoding="utf-8") as f:
+                                f.write(synced)
+                            return synced
+        except Exception:
+            continue
 
     return ""
 
 
 class MprisPlayerDbus:
-    """Connects to MPRIS via DBus session bus."""
+    """Connects to MPRIS via DBus session bus with full web browser & YouTube Music support."""
     def __init__(self):
         import dbus
         self.bus = dbus.SessionBus()
@@ -189,49 +315,83 @@ class MprisPlayerDbus:
                 if preferred_player.lower() in s.lower():
                     return s, self._get_player_props(s)
 
-        # Prioritize currently playing player
+        # Prioritize currently playing player with active track
         playing_player = None
+        paused_player = None
+
         for s in services:
-            # Skip playerctld or mirror buses to avoid duplicate loops
             if "playerctld" in s:
                 continue
             props = self._get_player_props(s)
             if props:
                 status = props.get("status", "")
-                if status == "Playing":
+                has_track = bool(props.get("title"))
+                if status == "Playing" and has_track:
                     return s, props
-                if not playing_player and status == "Paused":
+                if not playing_player and status == "Playing":
                     playing_player = (s, props)
+                if not paused_player and status == "Paused" and has_track:
+                    paused_player = (s, props)
 
         if playing_player:
             return playing_player
+        if paused_player:
+            return paused_player
 
-        # Fallback to first available
-        first = services[0]
-        return first, self._get_player_props(first)
+        # Fallback to first available with properties
+        for s in services:
+            if "playerctld" in s:
+                continue
+            props = self._get_player_props(s)
+            if props:
+                return s, props
+
+        return None, None
 
     def _get_player_props(self, service_name):
         import dbus
         try:
             obj = self.bus.get_object(service_name, "/org/mpris/MediaPlayer2")
             prop_iface = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
-            status = str(prop_iface.Get("org.mpris.MediaPlayer2.Player", "PlaybackStatus"))
-            meta = prop_iface.Get("org.mpris.MediaPlayer2.Player", "Metadata")
-            pos_us = int(prop_iface.Get("org.mpris.MediaPlayer2.Player", "Position"))
 
-            title = str(meta.get("xesam:title", ""))
+            try:
+                status = str(prop_iface.Get("org.mpris.MediaPlayer2.Player", "PlaybackStatus"))
+            except Exception:
+                status = "Stopped"
+
+            try:
+                meta = prop_iface.Get("org.mpris.MediaPlayer2.Player", "Metadata")
+            except Exception:
+                meta = {}
+
+            # Safe position query (often 0 or raises in Chrome/Firefox)
+            try:
+                pos_us = int(prop_iface.Get("org.mpris.MediaPlayer2.Player", "Position"))
+            except Exception:
+                pos_us = 0
+
+            raw_title = str(meta.get("xesam:title", ""))
             artists = meta.get("xesam:artist", [""])
-            artist = str(artists[0]) if artists else ""
+            if isinstance(artists, (list, tuple, dbus.Array)):
+                raw_artist = str(artists[0]) if len(artists) > 0 else ""
+            else:
+                raw_artist = str(artists) if artists else ""
+
             album = str(meta.get("xesam:album", ""))
             length_us = int(meta.get("mpris:length", 0))
             url = str(meta.get("xesam:url", ""))
             track_id = str(meta.get("mpris:trackid", ""))
 
+            # Clean and normalize metadata (handles YouTube Music, YouTube, Chrome, Firefox)
+            title, artist = clean_track_metadata(raw_title, raw_artist, album, url)
+
             return {
                 "service": service_name,
                 "status": status,
                 "title": title,
+                "raw_title": raw_title,
                 "artist": artist,
+                "raw_artist": raw_artist,
                 "album": album,
                 "position": pos_us / 1_000_000.0,
                 "duration": length_us / 1_000_000.0 if length_us else 0.0,
@@ -261,18 +421,22 @@ class MprisPlayerCtl:
             parts = out.split("|")
             if len(parts) < 6:
                 return None, None
-            status, title, artist, album, pos_str, length_str = parts[:6]
+            status, raw_title, raw_artist, album, pos_str, length_str = parts[:6]
             track_id = parts[6] if len(parts) > 6 else ""
             url = parts[7] if len(parts) > 7 else ""
 
             pos_val = float(pos_str) / 1_000_000.0 if pos_str else 0.0
             len_val = float(length_str) / 1_000_000.0 if length_str else 0.0
 
+            clean_t, clean_a = clean_track_metadata(raw_title, raw_artist, album, url)
+
             return "playerctl", {
                 "service": "playerctl",
                 "status": status,
-                "title": title,
-                "artist": artist,
+                "title": clean_t,
+                "raw_title": raw_title,
+                "artist": clean_a,
+                "raw_artist": raw_artist,
                 "album": album,
                 "position": pos_val,
                 "duration": len_val,

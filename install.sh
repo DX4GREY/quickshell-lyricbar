@@ -211,7 +211,7 @@ printf "  Add the following line to your ${C_CYAN}~/.config/hypr/hyprland/execs.
 printf "  ${C_BOLD}exec-once = quickshell-lyricbar --background${C_RESET}\n\n"
 
 info "Hyprland Keybinding Example:"
-printf "  ${C_BOLD}bind = SUPER, L, exec, qs -c lyricbar ipc call lyricbar toggle${C_RESET}\n\n"
+printf "  ${C_BOLD}bind = SUPER, Y, exec, qs -c lyricbar ipc call lyricbar toggle${C_RESET}\n\n"
 
 if [[ "$START_NOW" -eq 1 ]]; then
     step "Starting Quickshell LyricBar..."

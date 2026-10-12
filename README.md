@@ -1,6 +1,6 @@
 # Quickshell Floating LyricBar (Liquid Glass)
 
-An elegant, modern floating synced lyric bar built with **Quickshell** for Wayland / Hyprland desktops. Features **Apple Liquid Glass** (`hyprglass`) hardware refraction effects, dynamic content-driven auto-resizing per second, fluid spring/cubic easing transitions, instant real-time theme & color synchronization, and a built-in Settings & Keybinds configuration modal.
+An elegant, modern floating synced lyric bar built with **Quickshell** for Wayland / Hyprland desktops. Features **Apple Liquid Glass** (`hyprglass`) hardware refraction effects, dynamic content-driven auto-resizing per second, fluid spring/cubic easing transitions, instant real-time theme & color synchronization, comprehensive YouTube Music & browser support, and a built-in Settings & Keybinds configuration modal.
 
 ---
 
@@ -51,9 +51,14 @@ The installer will:
   - Fully mapped to the `quickshell:lyricbar` layer shell namespace using the Apple Liquid Glass `pomme` preset.
   - Realistic frosted translucency, specular rim highlight at the top edge, and interactive 3D parallax tilt on mouse hover.
 - **Dynamic Content-Driven Auto-Resize:**
-  - Connects to any MPRIS media player (Spotify, Amberol, MPD, VLC, Chrome, Firefox, Cider, etc.).
+  - Connects to any MPRIS media player: Spotify, YouTube Music, Amberol, MPD, VLC, Chrome, Firefox, Cider, etc.
   - Fetches synchronized `.lrc` timestamps via [LRCLIB.net](https://lrclib.net) or local audio folders.
   - Container width smoothly expands and contracts based on the exact character width of each active lyric line.
+- **YouTube Music & Browser Media Support:**
+  - Full support for YouTube Music and YouTube running in Google Chrome, Chromium, Mozilla Firefox, Brave, and Zen Browser.
+  - Automatic metadata cleaning: strips video suffixes (`Official Music Video`, `Lyric Video`, `Visualizer`, `4K`, `MV`, etc.), YouTube Topic tags (`- Topic`), `VEVO` channel suffixes, and browser headers.
+  - Splits compound video titles (`Artist - Song Title`) into exact artist and track parameters to query synchronized LRC timestamps accurately.
+  - Safe MPRIS position querying prevents browser DBus exceptions from interrupting playback tracking.
 - **Fluid Dimension & Text Transitions:**
   - **Fluid Resize:** Card width smoothly glides with `Easing.OutCubic` curve without abrupt resizing or snapping.
   - **Subtitle-style Transition:** Lyric text changes using a delicate cross-fade (`opacity 0.0 -> 1.0`) combined with a vertical slide (`y: -7px -> 0px`).
@@ -64,9 +69,10 @@ The installer will:
   - Re-evaluates live colors from `~/.cache/43pr/quickshell-theme.json` and `~/.local/state/quickshell/user/generated/colors.json`.
   - When you switch wallpapers or generate new palettes via Matugen / 43PR, all colors smoothly cross-fade to the new palette without restarting.
 - **Interactive Settings & Keybinds Modal:**
-  - Open the settings card directly via the gear icon or pressing `SUPER + CTRL + L`.
+  - Open the settings card directly via the gear icon or pressing `SUPER + CTRL + Y`.
   - Toggle behavior options (Auto-Hide on playback stop, Demo mode simulation).
   - Sync recommended keybindings directly to Hyprland with one click.
+  - Non-conflicting shortcut scheme (`SUPER + Y` family) preserves system shortcuts like screen locking (`SUPER + L`).
   - Persistent user preferences saved in `~/.config/quickshell/lyricbar/config.json`.
 - **Interactive Media Controls:**
   - **Play / Pause**: Click the disc / play-pause button (`playerctl play-pause`).
@@ -82,15 +88,22 @@ The installer will:
 ### 1. Opening Settings
 You can open or close the settings modal in multiple ways:
 - Click the gear icon on the right side of the floating bar.
-- Press `SUPER + CTRL + L` (when configured in Hyprland).
+- Press `SUPER + CTRL + Y` (configured in Hyprland).
 - Run IPC command: `qs -c lyricbar ipc call lyricbar toggleSettings`.
 
-### 2. Available Settings
+### 2. Recommended Keybindings Scheme
+To avoid conflicting with Hyprland default desktop shortcuts (such as `SUPER + L` which is assigned to `loginctl lock-session`), LyricBar uses the `Y` key series:
+
+- **`SUPER + Y`** : Toggle LyricBar visibility
+- **`SUPER + ALT + Y`** : Toggle Compact Mini-Pill mode
+- **`SUPER + CTRL + Y`** : Toggle Settings & Keybinds modal
+
+### 3. Available Settings
 - **Auto-Hide (ON / OFF):** Automatically conceals the lyric bar when music is stopped or paused, reappearing immediately when playback resumes.
 - **Demo Mode (ON / OFF):** Toggles between live MPRIS media listening and the internal synchronized demo player for testing.
 - **Sync Hyprland Binds:** Appends recommended hotkeys into `~/.config/hypr/custom/keybinds.lua` if not already present.
 
-### 3. Persistent Configuration
+### 4. Persistent Configuration
 Settings are saved to `~/.config/quickshell/lyricbar/config.json`:
 
 ```json
@@ -142,22 +155,22 @@ exec-once = quickshell-lyricbar --background
 Add hotkeys to your `~/.config/hypr/custom/keybinds.lua` (or use the "Sync Hyprland Binds" button in Settings):
 
 ```lua
--- Toggle LyricBar visibility (Super + L)
-hl.bind("SUPER, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
+-- Toggle LyricBar visibility (Super + Y)
+hl.bind("SUPER + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
 
--- Toggle Compact Mini-Pill mode (Super + Alt + L)
-hl.bind("SUPER ALT, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
+-- Toggle Compact Mini-Pill mode (Super + Alt + Y)
+hl.bind("SUPER + ALT + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
 
--- Toggle Settings Modal (Super + Ctrl + L)
-hl.bind("SUPER CTRL, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
+-- Toggle Settings Modal (Super + Ctrl + Y)
+hl.bind("SUPER + CTRL + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
 ```
 
 For standard `hyprland.conf` syntax without Lua:
 
 ```ini
-bind = SUPER, L, exec, quickshell-lyricbar ipc call lyricbar toggle
-bind = SUPER ALT, L, exec, quickshell-lyricbar ipc call lyricbar toggleMini
-bind = SUPER CTRL, L, exec, quickshell-lyricbar ipc call lyricbar toggleSettings
+bind = SUPER, Y, exec, quickshell-lyricbar ipc call lyricbar toggle
+bind = SUPER ALT, Y, exec, quickshell-lyricbar ipc call lyricbar toggleMini
+bind = SUPER CTRL, Y, exec, quickshell-lyricbar ipc call lyricbar toggleSettings
 bind = , XF86AudioPlay, exec, quickshell-lyricbar ipc call lyricbar playPause
 ```
 

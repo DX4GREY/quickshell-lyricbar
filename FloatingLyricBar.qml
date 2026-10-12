@@ -169,9 +169,9 @@ PanelWindow {
             cat << 'EOF' >> "$KEYBIND_FILE"
 
 -- Quickshell LyricBar Keybindings
-hl.bind("SUPER, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
-hl.bind("SUPER+ALT, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
-hl.bind("SUPER+CTRL, L", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
+hl.bind("SUPER + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
+hl.bind("SUPER + ALT + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
+hl.bind("SUPER + CTRL + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
 EOF
         fi
         SIG=$(basename /run/user/$(id -u)/hypr/*_* 2>/dev/null || echo "")
@@ -483,7 +483,7 @@ EOF
                         renderType: Text.NativeRendering
                     }
                     Item { Layout.fillWidth: true }
-                    KeyBadge { keyText: "SUPER + L" }
+                    KeyBadge { keyText: "SUPER + Y" }
                 }
 
                 // Row: Mini Pill Mode
@@ -497,7 +497,7 @@ EOF
                         renderType: Text.NativeRendering
                     }
                     Item { Layout.fillWidth: true }
-                    KeyBadge { keyText: "SUPER + ALT + L" }
+                    KeyBadge { keyText: "SUPER + ALT + Y" }
                 }
 
                 // Row: Settings Modal
@@ -511,7 +511,7 @@ EOF
                         renderType: Text.NativeRendering
                     }
                     Item { Layout.fillWidth: true }
-                    KeyBadge { keyText: "SUPER + CTRL + L" }
+                    KeyBadge { keyText: "SUPER + CTRL + Y" }
                 }
 
                 // Row: Media controls
