@@ -351,6 +351,7 @@ PanelWindow {
             opacity: 0.85
 
             Behavior on width { NumberAnimation { duration: 140 } }
+            Behavior on color { ColorAnimation { duration: theme.animMed } }
         }
 
         // MouseArea for interactivity, parallax, and playerctl shortcuts
@@ -415,6 +416,7 @@ PanelWindow {
                     renderType: Text.NativeRendering
                     color: theme.accent
                     text: root.isPlaying ? "󰏤" : "󰐊" // Nerd Font: Pause or Play
+                    Behavior on color { ColorAnimation { duration: theme.animFast } }
                 }
 
                 MouseArea {
@@ -438,6 +440,9 @@ PanelWindow {
                 border.color: theme.border
                 border.width: 1
 
+                Behavior on color { ColorAnimation { duration: theme.animMed } }
+                Behavior on border.color { ColorAnimation { duration: theme.animMed } }
+
                 Text {
                     id: artistText
                     anchors.centerIn: parent
@@ -449,6 +454,7 @@ PanelWindow {
                     text: root.trackArtist
                     elide: Text.ElideRight
                     maximumLineCount: 1
+                    Behavior on color { ColorAnimation { duration: theme.animMed } }
                 }
             }
 
@@ -499,6 +505,8 @@ PanelWindow {
                 radius: 3
                 color: theme.accent
 
+                Behavior on color { ColorAnimation { duration: theme.animFast } }
+
                 SequentialAnimation on opacity {
                     running: root.hasLyrics && root.isPlaying
                     loops: Animation.Infinite
@@ -545,6 +553,7 @@ PanelWindow {
         border.color: miniArea.containsMouse ? theme.glassBorderHover : theme.glassBorder
         border.width: 1
 
+        Behavior on color { ColorAnimation { duration: theme.animMed } }
         Behavior on opacity { NumberAnimation { duration: theme.animFast } }
         Behavior on scale { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutBack } }
         Behavior on border.color { ColorAnimation { duration: theme.animFast } }
@@ -556,6 +565,7 @@ PanelWindow {
             renderType: Text.NativeRendering
             color: root.isPlaying ? theme.accent : theme.textDim
             text: "󰎆" // Nerd Font: Music Note
+            Behavior on color { ColorAnimation { duration: theme.animFast } }
         }
 
         MouseArea {
