@@ -7,6 +7,12 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
 
+# Handle IPC passthrough directly
+if [[ "${1:-}" == "ipc" ]]; then
+    shift
+    exec qs -c lyricbar ipc --any-display "$@"
+fi
+
 print_help() {
     echo "Usage: ./run.sh [OPTIONS]"
     echo ""
@@ -14,14 +20,15 @@ print_help() {
     echo "  --demo, -t         Run in demo mode with synchronized test lyrics"
     echo "  --background, -b   Run detached in background"
     echo "  --kill, -k         Kill running lyricbar instance"
+    echo "  ipc [COMMAND...]   Send IPC command to running LyricBar instance"
     echo "  --help, -h         Show this help message"
     echo ""
 }
 
 kill_instance() {
     echo "Stopping Quickshell LyricBar instances..."
-    pkill -f "qs -p ${PROJECT_DIR}" 2>/dev/null || true
-    pkill -f "${PROJECT_DIR}/lyric_listener.py" 2>/dev/null || true
+    pkill -f "qs.*lyricbar" 2>/dev/null || true
+    pkill -f "lyric_listener.py" 2>/dev/null || true
     echo "Done."
 }
 
@@ -61,8 +68,8 @@ else
 fi
 
 if [ "$DAEMON_FLAG" -eq 1 ]; then
-    nohup qs -p "${PROJECT_DIR}" > /dev/null 2>&1 &
+    nohup qs -c lyricbar > /dev/null 2>&1 &
     echo "LyricBar started in background (PID: $!)."
 else
-    exec qs -p "${PROJECT_DIR}"
+    exec qs -c lyricbar
 fi

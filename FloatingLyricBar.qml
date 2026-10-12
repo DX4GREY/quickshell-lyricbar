@@ -165,13 +165,13 @@ PanelWindow {
         KEYBIND_FILE="$HOME/.config/hypr/custom/keybinds.lua"
         mkdir -p "$(dirname "$KEYBIND_FILE")"
         touch "$KEYBIND_FILE"
-        if ! grep -q "quickshell-lyricbar" "$KEYBIND_FILE"; then
+        if ! grep -q "lyricbar" "$KEYBIND_FILE"; then
             cat << 'EOF' >> "$KEYBIND_FILE"
 
 -- Quickshell LyricBar Keybindings
-hl.bind("SUPER + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
-hl.bind("SUPER + ALT + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
-hl.bind("SUPER + CTRL + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
+hl.bind("SUPER + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
+hl.bind("SUPER + ALT + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
+hl.bind("SUPER + CTRL + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
 EOF
         fi
         SIG=$(basename /run/user/$(id -u)/hypr/*_* 2>/dev/null || echo "")

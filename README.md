@@ -156,22 +156,22 @@ Add hotkeys to your `~/.config/hypr/custom/keybinds.lua` (or use the "Sync Hyprl
 
 ```lua
 -- Toggle LyricBar visibility (Super + Y)
-hl.bind("SUPER + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
+hl.bind("SUPER + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
 
 -- Toggle Compact Mini-Pill mode (Super + Alt + Y)
-hl.bind("SUPER + ALT + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
+hl.bind("SUPER + ALT + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
 
 -- Toggle Settings Modal (Super + Ctrl + Y)
-hl.bind("SUPER + CTRL + Y", hl.dsp.exec_cmd("quickshell-lyricbar ipc call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
+hl.bind("SUPER + CTRL + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
 ```
 
 For standard `hyprland.conf` syntax without Lua:
 
 ```ini
-bind = SUPER, Y, exec, quickshell-lyricbar ipc call lyricbar toggle
-bind = SUPER ALT, Y, exec, quickshell-lyricbar ipc call lyricbar toggleMini
-bind = SUPER CTRL, Y, exec, quickshell-lyricbar ipc call lyricbar toggleSettings
-bind = , XF86AudioPlay, exec, quickshell-lyricbar ipc call lyricbar playPause
+bind = SUPER, Y, exec, qs -c lyricbar ipc --any-display call lyricbar toggle
+bind = SUPER ALT, Y, exec, qs -c lyricbar ipc --any-display call lyricbar toggleMini
+bind = SUPER CTRL, Y, exec, qs -c lyricbar ipc --any-display call lyricbar toggleSettings
+bind = , XF86AudioPlay, exec, qs -c lyricbar ipc --any-display call lyricbar playPause
 ```
 
 ### 3. IPC Commands Reference

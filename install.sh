@@ -157,6 +157,10 @@ step "Creating Executable Wrapper in ${BIN_DIR}/quickshell-lyricbar..."
 
 cat << 'EOF' > "${BIN_DIR}/quickshell-lyricbar"
 #!/usr/bin/env bash
+if [[ "${1:-}" == "ipc" ]]; then
+    shift
+    exec qs -c lyricbar ipc --any-display "$@"
+fi
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/lyricbar"
 if [[ -f "${CONFIG_DIR}/run.sh" ]]; then
     exec "${CONFIG_DIR}/run.sh" "$@"
