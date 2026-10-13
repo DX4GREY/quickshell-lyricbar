@@ -110,6 +110,8 @@ If LyricBar is already installed on the system, the installer detects the existi
 ./install.sh --uninstall
 ```
 
+Upon successful installation or repair, the installer automatically launches the LyricBar daemon in the background. Pass `--no-start` if you want to skip immediate execution.
+
 ### System Prerequisites
 
 Ensure the following packages are installed on your distribution:

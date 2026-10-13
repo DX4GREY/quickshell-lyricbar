@@ -82,7 +82,7 @@ read_input() {
 # ------------------------------------------------------------------------------
 UNINSTALL=0
 REPAIR=0
-START_NOW=0
+AUTO_START=1
 
 for arg in "$@"; do
     case "$arg" in
@@ -92,8 +92,11 @@ for arg in "$@"; do
         --repair|-r|--reinstall)
             REPAIR=1
             ;;
+        --no-start)
+            AUTO_START=0
+            ;;
         --start|-s)
-            START_NOW=1
+            AUTO_START=1
             ;;
         --help|-h)
             echo "Usage: ./install.sh [OPTIONS]"
@@ -101,7 +104,7 @@ for arg in "$@"; do
             echo "Options:"
             echo "  --repair, -r, --reinstall  Repair or update existing installation"
             echo "  --uninstall, -u            Uninstall LyricBar from system"
-            echo "  --start, -s                Automatically start LyricBar after installation"
+            echo "  --no-start                 Do not launch LyricBar daemon after installation"
             echo "  --help, -h                 Show this help message"
             exit 0
             ;;
@@ -115,7 +118,7 @@ do_uninstall() {
     step "Uninstalling Quickshell LyricBar..."
     pkill -f "qs -c lyricbar" 2>/dev/null || true
     pkill -f "qs.*lyricbar" 2>/dev/null || true
-    pkill -f "${TARGET_DIR}/lyric_listener.py" 2>/dev/null || true
+    pkill -f "lyric_listener.py" 2>/dev/null || true
     pkill -f "quickshell-lyricbar" 2>/dev/null || true
     
     if [[ -d "$TARGET_DIR" ]]; then
@@ -191,7 +194,8 @@ if pgrep -f "qs.*lyricbar" >/dev/null 2>&1; then
     WAS_RUNNING=1
     info "Existing LyricBar instance is active. Halting temporarily for update..."
     pkill -f "qs.*lyricbar" 2>/dev/null || true
-    pkill -f "${TARGET_DIR}/lyric_listener.py" 2>/dev/null || true
+    pkill -f "lyric_listener.py" 2>/dev/null || true
+    sleep 0.5
 fi
 
 # ------------------------------------------------------------------------------
@@ -370,8 +374,8 @@ printf "  ${C_BOLD}exec-once = quickshell-lyricbar --background${C_RESET}\n\n"
 info "Hyprland Keybinding Example:"
 printf "  ${C_BOLD}bind = SUPER, Y, exec, qs -c lyricbar ipc call lyricbar toggle${C_RESET}\n\n"
 
-if [[ "$START_NOW" -eq 1 || "$WAS_RUNNING" -eq 1 ]]; then
-    step "Starting Quickshell LyricBar..."
+if [[ "$AUTO_START" -eq 1 ]]; then
+    step "Starting Quickshell LyricBar Daemon..."
     "${BIN_DIR}/quickshell-lyricbar" --background
-    success "LyricBar started in background."
+    success "LyricBar daemon running in background."
 fi
