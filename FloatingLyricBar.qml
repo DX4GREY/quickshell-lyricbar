@@ -33,6 +33,7 @@ PanelWindow {
     property real tiltY: 0.0
 
     // MPRIS & Lyric Data
+    property string activePlayer: ""
     property string activeLyric: ""
     property string displayedLyric: targetLyric
     property string nextLyric: ""
@@ -121,9 +122,27 @@ PanelWindow {
         function openSettings(): void { root.settingsOpen = true; }
         function closeSettings(): void { root.settingsOpen = false; }
         function toggleSettings(): void { root.settingsOpen = !root.settingsOpen; }
-        function playPause(): void { mediaProcess.run(["playerctl", "play-pause"]); }
-        function next(): void { mediaProcess.run(["playerctl", "next"]); }
-        function prev(): void { mediaProcess.run(["playerctl", "previous"]); }
+        function playPause(): void {
+            if (root.activePlayer) {
+                mediaProcess.run(["playerctl", "-p", root.activePlayer, "play-pause"]);
+            } else {
+                mediaProcess.run(["playerctl", "play-pause"]);
+            }
+        }
+        function next(): void {
+            if (root.activePlayer) {
+                mediaProcess.run(["playerctl", "-p", root.activePlayer, "next"]);
+            } else {
+                mediaProcess.run(["playerctl", "next"]);
+            }
+        }
+        function prev(): void {
+            if (root.activePlayer) {
+                mediaProcess.run(["playerctl", "-p", root.activePlayer, "previous"]);
+            } else {
+                mediaProcess.run(["playerctl", "previous"]);
+            }
+        }
         function applyHyprlandKeybinds(): void { root.syncKeybinds(); }
     }
 
@@ -230,6 +249,7 @@ EOF
                 if (!line) return;
                 try {
                     const info = JSON.parse(line);
+                    root.activePlayer = info.player || "";
                     root.activeLyric = info.text || "";
                     root.nextLyric = info.next || "";
                     root.trackTitle = info.title || "";
@@ -933,17 +953,17 @@ EOF
 
                     onClicked: mouse => {
                         if (mouse.button === Qt.MiddleButton) {
-                            mediaProcess.run(["playerctl", "previous"]);
+                            root.prev();
                         } else if (mouse.button === Qt.RightButton) {
-                            mediaProcess.run(["playerctl", "next"]);
+                            root.next();
                         }
                     }
 
                     onWheel: wheel => {
                         if (wheel.angleDelta.y > 0) {
-                            mediaProcess.run(["playerctl", "volume", "0.05+"]);
+                            mediaProcess.run(root.activePlayer ? ["playerctl", "-p", root.activePlayer, "volume", "0.05+"] : ["playerctl", "volume", "0.05+"]);
                         } else if (wheel.angleDelta.y < 0) {
-                            mediaProcess.run(["playerctl", "volume", "0.05-"]);
+                            mediaProcess.run(root.activePlayer ? ["playerctl", "-p", root.activePlayer, "volume", "0.05-"] : ["playerctl", "volume", "0.05-"]);
                         }
                     }
                 }
@@ -989,7 +1009,7 @@ EOF
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: mediaProcess.run(["playerctl", "play-pause"])
+                            onClicked: root.playPause()
                         }
                     }
 

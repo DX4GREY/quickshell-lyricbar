@@ -45,27 +45,56 @@ def clean_track_metadata(raw_title: str, raw_artist: str = "", album: str = "", 
     title = raw_title.strip()
     artist = raw_artist.strip() if raw_artist else ""
 
-    # 1. Strip web platform & browser suffixes from title
+    # 1. Strip web platform & browser suffixes from title iteratively
+    # Delimiters can be hyphen, en-dash, em-dash, pipe, bullet, middle dot
     browser_suffixes = [
-        r"\s+-\s+YouTube\s+Music$",
-        r"\s+-\s+YouTube$",
-        r"\s+-\s+(?:Mozilla\s+)?Firefox$",
-        r"\s+-\s+Google\s+Chrome$",
-        r"\s+-\s+Chromium$",
-        r"\s+-\s+Brave$",
-        r"\s+-\s+Zen\s+Browser$",
+        r"\s*[-–—|•·]\s*YouTube\s+Music(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*YouTube(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*(?:Google\s+)?Chrome(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*Chromium(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*(?:Mozilla\s+)?Firefox(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*Brave(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*Zen\s+Browser(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*Soundcloud(?:\s+.*)?$",
+        r"\s*[-–—|•·]\s*Bandcamp(?:\s+.*)?$",
     ]
-    for s in browser_suffixes:
-        title = re.sub(s, "", title, flags=re.IGNORECASE)
+    while True:
+        changed = False
+        for s in browser_suffixes:
+            new_title = re.sub(s, "", title, flags=re.IGNORECASE).strip()
+            if new_title != title:
+                title = new_title
+                changed = True
+        if not changed:
+            break
+
+    # Strip web platform prefixes (e.g. 'YouTube Music - Song', 'YouTube - Song')
+    browser_prefixes = [
+        r"^YouTube\s+Music\s*[-–—|•·]\s*",
+        r"^YouTube\s*[-–—|•·]\s*",
+    ]
+    for p in browser_prefixes:
+        title = re.sub(p, "", title, flags=re.IGNORECASE).strip()
 
     # 2. Clean generic or browser artist names
-    generic_artists = [
+    generic_artists = {
         "youtube", "youtube music", "google chrome", "chrome",
         "firefox", "mozilla firefox", "chromium", "brave", "zen",
-        "unknown artist", "various artists", "web browser"
-    ]
-    if artist.lower() in generic_artists:
+        "zen browser", "unknown artist", "various artists", "web browser"
+    }
+    if artist.lower().strip() in generic_artists:
         artist = ""
+
+    # Filter out generic / placeholder titles (e.g. when browser tab is just 'YouTube Music')
+    generic_titles = {
+        "youtube music", "youtube", "google chrome", "chrome",
+        "chromium", "firefox", "mozilla firefox", "brave",
+        "zen browser", "zen", "web browser", "new tab",
+        "untitled", "home", "search", "music", "audio", "video",
+        "unknown"
+    }
+    if title.lower().strip() in generic_titles and (not artist or artist.lower().strip() in generic_artists):
+        return "", ""
 
     # 3. Clean auto-generated Topic / VEVO artist suffixes
     if artist:
@@ -115,15 +144,33 @@ def clean_track_metadata(raw_title: str, raw_artist: str = "", album: str = "", 
     for junk in video_junk:
         title = re.sub(junk, "", title, flags=re.IGNORECASE)
 
-    # 5. Check if title is formatted as 'Artist - Song Title' (ubiquitous on YouTube)
-    split_match = re.search(r"\s+[-–—]\s+", title)
-    if split_match:
-        cand_artist = title[:split_match.start()].strip()
-        cand_title = title[split_match.end():].strip()
-        # If artist is missing or matches candidate or artist is channel name
-        if not artist or artist.lower() in cand_artist.lower() or cand_artist.lower() in artist.lower():
-            artist = cand_artist
-            title = cand_title
+    # 5. Check if title contains compound delimiters
+    # First check bullet points e.g. 'Song • Artist' (common on YouTube Music)
+    split_bullet = re.search(r"\s+[•·]\s+", title)
+    if split_bullet:
+        cand1 = title[:split_bullet.start()].strip()
+        cand2 = title[split_bullet.end():].strip()
+        if not artist:
+            # On YouTube Music tab titles, format is 'Title • Artist'
+            title, artist = cand1, cand2
+        elif cand2.lower() in artist.lower() or artist.lower() in cand2.lower():
+            title = cand1
+            artist = cand2
+        elif cand1.lower() in artist.lower() or artist.lower() in cand1.lower():
+            title = cand2
+            artist = cand1
+    else:
+        # Check standard dashes e.g. 'Artist - Song Title' (standard YouTube video format)
+        split_match = re.search(r"\s+[-–—|]\s+", title)
+        if split_match:
+            cand_artist = title[:split_match.start()].strip()
+            cand_title = title[split_match.end():].strip()
+            if not artist or artist.lower() in cand_artist.lower() or cand_artist.lower() in artist.lower():
+                artist = cand_artist
+                title = cand_title
+            elif cand_title.lower() in artist.lower() or artist.lower() in cand_title.lower():
+                artist = cand_title
+                title = cand_artist
 
     # 6. Clean quotes around song titles e.g. Artist 'Song Name'
     quote_match = re.search(r'^(.*?)\s+["\x27“](.*?)["\x27”]$', title)
@@ -299,6 +346,63 @@ def fetch_online_lrc(artist: str, title: str, album: str = "", duration: float =
     return ""
 
 
+def score_player(service: str, props: dict) -> int:
+    """
+    Scores candidate MPRIS players to prioritize the most relevant media source.
+    Prefers:
+    1. 'Playing' status over 'Paused'
+    2. Valid track titles and non-empty artist names
+    3. High-fidelity browser integrations (e.g. Plasma Browser Integration) over raw browser binaries
+    4. Dedicated media players (Spotify, Cider, Amberol, MPD, VLC)
+    """
+    if not props:
+        return -1
+
+    status = props.get("status", "")
+    title = props.get("title", "").strip()
+    artist = props.get("artist", "").strip()
+
+    score = 0
+    if status == "Playing":
+        score += 1000
+    elif status == "Paused":
+        score += 400
+    else:
+        return -1
+
+    # Heavy penalty if no identifiable track
+    if not title:
+        return score - 500
+
+    # Rich metadata bonus
+    if artist:
+        score += 300
+    else:
+        score += 100
+
+    if props.get("album"):
+        score += 50
+    if props.get("url"):
+        score += 40
+    if props.get("duration", 0) > 0:
+        score += 30
+
+    s_lower = service.lower()
+    if "plasma-browser-integration" in s_lower:
+        # Browser extension integration delivers high-fidelity DOM media metadata
+        score += 200
+    elif any(p in s_lower for p in ["spotify", "cider", "amberol", "mpd", "vlc", "rhythmbox", "audacious"]):
+        score += 150
+    elif any(b in s_lower for b in ["chromium", "chrome", "firefox", "brave", "zen"]):
+        # Raw browser binary: give modest score if artist is present, otherwise discount
+        if artist:
+            score += 50
+        else:
+            score -= 100
+
+    return score
+
+
 class MprisPlayerDbus:
     """Connects to MPRIS via DBus session bus with full web browser & YouTube Music support."""
     def __init__(self):
@@ -313,40 +417,26 @@ class MprisPlayerDbus:
         if preferred_player:
             for s in services:
                 if preferred_player.lower() in s.lower():
-                    return s, self._get_player_props(s)
+                    props = self._get_player_props(s)
+                    if props:
+                        return s, props
 
-        # Prioritize currently playing player with active track
-        playing_player = None
-        paused_player = None
-
+        scored = []
         for s in services:
             if "playerctld" in s:
                 continue
             props = self._get_player_props(s)
             if props:
-                status = props.get("status", "")
-                has_track = bool(props.get("title"))
-                if status == "Playing" and has_track:
-                    return s, props
-                if not playing_player and status == "Playing":
-                    playing_player = (s, props)
-                if not paused_player and status == "Paused" and has_track:
-                    paused_player = (s, props)
+                sc = score_player(s, props)
+                if sc > 0:
+                    scored.append((sc, s, props))
 
-        if playing_player:
-            return playing_player
-        if paused_player:
-            return paused_player
+        if not scored:
+            return None, None
 
-        # Fallback to first available with properties
-        for s in services:
-            if "playerctld" in s:
-                continue
-            props = self._get_player_props(s)
-            if props:
-                return s, props
-
-        return None, None
+        scored.sort(key=lambda x: x[0], reverse=True)
+        best_sc, best_s, best_props = scored[0]
+        return best_s, best_props
 
     def _get_player_props(self, service_name):
         import dbus
@@ -385,8 +475,13 @@ class MprisPlayerDbus:
             # Clean and normalize metadata (handles YouTube Music, YouTube, Chrome, Firefox)
             title, artist = clean_track_metadata(raw_title, raw_artist, album, url)
 
+            player_name = str(service_name)
+            if player_name.startswith("org.mpris.MediaPlayer2."):
+                player_name = player_name[len("org.mpris.MediaPlayer2."):]
+
             return {
                 "service": service_name,
+                "player": player_name,
                 "status": status,
                 "title": title,
                 "raw_title": raw_title,
@@ -409,40 +504,70 @@ class MprisPlayerCtl:
         cmd = ["playerctl"]
         if preferred_player:
             cmd.extend(["-p", preferred_player])
-        cmd.extend([
-            "metadata",
-            "--format",
-            "{{status}}|{{title}}|{{artist}}|{{album}}|{{position}}|{{mpris:length}}|{{mpris:trackid}}|{{xesam:url}}"
-        ])
+            cmd.extend([
+                "metadata",
+                "--format",
+                "{{playerName}}|{{status}}|{{title}}|{{artist}}|{{album}}|{{position}}|{{mpris:length}}|{{mpris:trackid}}|{{xesam:url}}"
+            ])
+        else:
+            cmd.extend([
+                "-a",
+                "metadata",
+                "--format",
+                "{{playerName}}|{{status}}|{{title}}|{{artist}}|{{album}}|{{position}}|{{mpris:length}}|{{mpris:trackid}}|{{xesam:url}}"
+            ])
         try:
             out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=1.0).decode("utf-8").strip()
             if not out:
                 return None, None
-            parts = out.split("|")
-            if len(parts) < 6:
+
+            scored = []
+            for line in out.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split("|")
+                if len(parts) < 7:
+                    continue
+                player_name, status, raw_title, raw_artist, album, pos_str, length_str = parts[:7]
+                track_id = parts[7] if len(parts) > 7 else ""
+                url = parts[8] if len(parts) > 8 else ""
+
+                try:
+                    pos_val = float(pos_str) / 1_000_000.0 if pos_str else 0.0
+                except ValueError:
+                    pos_val = 0.0
+                try:
+                    len_val = float(length_str) / 1_000_000.0 if length_str else 0.0
+                except ValueError:
+                    len_val = 0.0
+
+                clean_t, clean_a = clean_track_metadata(raw_title, raw_artist, album, url)
+
+                props = {
+                    "service": player_name,
+                    "player": player_name,
+                    "status": status,
+                    "title": clean_t,
+                    "raw_title": raw_title,
+                    "artist": clean_a,
+                    "raw_artist": raw_artist,
+                    "album": album,
+                    "position": pos_val,
+                    "duration": len_val,
+                    "url": url,
+                    "track_id": track_id,
+                }
+                sc = score_player(player_name, props)
+                if sc > 0:
+                    scored.append((sc, player_name, props))
+
+            if not scored:
                 return None, None
-            status, raw_title, raw_artist, album, pos_str, length_str = parts[:6]
-            track_id = parts[6] if len(parts) > 6 else ""
-            url = parts[7] if len(parts) > 7 else ""
 
-            pos_val = float(pos_str) / 1_000_000.0 if pos_str else 0.0
-            len_val = float(length_str) / 1_000_000.0 if length_str else 0.0
-
-            clean_t, clean_a = clean_track_metadata(raw_title, raw_artist, album, url)
-
-            return "playerctl", {
-                "service": "playerctl",
-                "status": status,
-                "title": clean_t,
-                "raw_title": raw_title,
-                "artist": clean_a,
-                "raw_artist": raw_artist,
-                "album": album,
-                "position": pos_val,
-                "duration": len_val,
-                "url": url,
-                "track_id": track_id,
-            }
+            scored.sort(key=lambda x: x[0], reverse=True)
+            best_sc, best_player, best_props = scored[0]
+            return best_player, best_props
         except Exception:
             return None, None
 
@@ -656,6 +781,7 @@ def main():
                     "artist": artist,
                     "title": title,
                     "album": album,
+                    "player": props.get("player", ""),
                     "status": status,
                     "hasLyrics": has_synced_lyrics,
                     "position": round(est_pos, 2),
