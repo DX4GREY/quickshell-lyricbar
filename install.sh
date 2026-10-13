@@ -52,15 +52,45 @@ if [[ -z "$SCRIPT_DIR" || ! -f "${SCRIPT_DIR}/FloatingLyricBar.qml" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 2. Parse Arguments
+# 2. Helper Functions
+# ------------------------------------------------------------------------------
+USER_CHOICE=""
+read_input() {
+    local prompt_msg="$1"
+    local default_val="$2"
+    USER_CHOICE=""
+
+    if [[ -t 0 ]]; then
+        read -r -p "$prompt_msg" USER_CHOICE || true
+    elif read -t 0 2>/dev/null; then
+        read -r USER_CHOICE || true
+    elif [[ -c /dev/tty && -r /dev/tty && -w /dev/tty ]]; then
+        printf "%b" "$prompt_msg" > /dev/tty 2>/dev/null || true
+        read -r USER_CHOICE < /dev/tty 2>/dev/null || true
+    else
+        USER_CHOICE="$default_val"
+    fi
+
+    USER_CHOICE="$(echo "$USER_CHOICE" | tr -d '\r' | xargs)"
+    if [[ -z "$USER_CHOICE" ]]; then
+        USER_CHOICE="$default_val"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# 3. Parse Arguments
 # ------------------------------------------------------------------------------
 UNINSTALL=0
+REPAIR=0
 START_NOW=0
 
 for arg in "$@"; do
     case "$arg" in
         --uninstall|-u)
             UNINSTALL=1
+            ;;
+        --repair|-r|--reinstall)
+            REPAIR=1
             ;;
         --start|-s)
             START_NOW=1
@@ -69,21 +99,24 @@ for arg in "$@"; do
             echo "Usage: ./install.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --start, -s        Automatically start LyricBar after installation"
-            echo "  --uninstall, -u    Uninstall LyricBar from quickshell config"
-            echo "  --help, -h         Show this help message"
+            echo "  --repair, -r, --reinstall  Repair or update existing installation"
+            echo "  --uninstall, -u            Uninstall LyricBar from system"
+            echo "  --start, -s                Automatically start LyricBar after installation"
+            echo "  --help, -h                 Show this help message"
             exit 0
             ;;
     esac
 done
 
 # ------------------------------------------------------------------------------
-# 3. Handle Uninstallation
+# 4. Uninstallation Handler
 # ------------------------------------------------------------------------------
-if [[ "$UNINSTALL" -eq 1 ]]; then
+do_uninstall() {
     step "Uninstalling Quickshell LyricBar..."
     pkill -f "qs -c lyricbar" 2>/dev/null || true
+    pkill -f "qs.*lyricbar" 2>/dev/null || true
     pkill -f "${TARGET_DIR}/lyric_listener.py" 2>/dev/null || true
+    pkill -f "quickshell-lyricbar" 2>/dev/null || true
     
     if [[ -d "$TARGET_DIR" ]]; then
         rm -rf "$TARGET_DIR"
@@ -92,25 +125,77 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     
     if [[ -f "${BIN_DIR}/quickshell-lyricbar" ]]; then
         rm -f "${BIN_DIR}/quickshell-lyricbar"
-        success "Removed binary link: ${BIN_DIR}/quickshell-lyricbar"
+        success "Removed binary wrapper: ${BIN_DIR}/quickshell-lyricbar"
     fi
 
     # Clean up autostart configurations
     HYPR_CUSTOM_EXECS="${XDG_CONFIG_HOME}/hypr/custom/execs.lua"
     if [[ -f "$HYPR_CUSTOM_EXECS" ]]; then
+        sed -i '/-- Autostart Quickshell LyricBar/,/end)/d' "$HYPR_CUSTOM_EXECS" 2>/dev/null || true
         sed -i '/quickshell-lyricbar/d' "$HYPR_CUSTOM_EXECS" 2>/dev/null || true
+        success "Cleaned up Hyprland autostart entry in $HYPR_CUSTOM_EXECS"
     fi
     XDG_AUTOSTART="${XDG_CONFIG_HOME}/autostart/quickshell-lyricbar.desktop"
     if [[ -f "$XDG_AUTOSTART" ]]; then
         rm -f "$XDG_AUTOSTART"
+        success "Removed XDG desktop autostart entry: $XDG_AUTOSTART"
     fi
     
-    success "Quickshell LyricBar successfully uninstalled."
+    printf "\n${C_GREEN}${C_BOLD}Quickshell LyricBar successfully uninstalled.${C_RESET}\n"
     exit 0
+}
+
+if [[ "$UNINSTALL" -eq 1 ]]; then
+    do_uninstall
 fi
 
 # ------------------------------------------------------------------------------
-# 4. Dependency Checks
+# 5. Check for Existing Installation
+# ------------------------------------------------------------------------------
+IS_INSTALLED=0
+if [[ -f "${TARGET_DIR}/FloatingLyricBar.qml" || -f "${BIN_DIR}/quickshell-lyricbar" ]]; then
+    IS_INSTALLED=1
+fi
+
+if [[ "$IS_INSTALLED" -eq 1 && "$REPAIR" -eq 0 ]]; then
+    printf "\n${C_YELLOW}${C_BOLD}Quickshell LyricBar is already installed on this system!${C_RESET}\n"
+    printf "Detected installation at: ${C_CYAN}%s${C_RESET}\n\n" "$TARGET_DIR"
+    printf "Please select an option:\n"
+    printf "  ${C_BOLD}1)${C_RESET} ${C_GREEN}Repair / Update${C_RESET}  (Reinstall files, update wrapper & autostart, preserve config)\n"
+    printf "  ${C_BOLD}2)${C_RESET} ${C_RED}Uninstall${C_RESET}        (Completely remove LyricBar from system)\n"
+    printf "  ${C_BOLD}3)${C_RESET} Cancel / Exit\n\n"
+
+    read_input "${C_BOLD}Enter choice [1-3] (Default: 1): ${C_RESET}" "1"
+    case "$USER_CHOICE" in
+        1)
+            info "Proceeding with Repair / Update..."
+            REPAIR=1
+            ;;
+        2)
+            do_uninstall
+            ;;
+        3|[qQ]|[eE]xit|[cC]ancel)
+            info "Installation cancelled by user."
+            exit 0
+            ;;
+        *)
+            warn "Unrecognized selection '$USER_CHOICE'. Defaulting to Repair / Update..."
+            REPAIR=1
+            ;;
+    esac
+fi
+
+# Stop running instances during repair/update to ensure clean file replacement
+WAS_RUNNING=0
+if pgrep -f "qs.*lyricbar" >/dev/null 2>&1; then
+    WAS_RUNNING=1
+    info "Existing LyricBar instance is active. Halting temporarily for update..."
+    pkill -f "qs.*lyricbar" 2>/dev/null || true
+    pkill -f "${TARGET_DIR}/lyric_listener.py" 2>/dev/null || true
+fi
+
+# ------------------------------------------------------------------------------
+# 6. Dependency Checks
 # ------------------------------------------------------------------------------
 step "Checking System Dependencies..."
 
@@ -140,7 +225,7 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# 5. Install Component Files
+# 7. Install Component Files
 # ------------------------------------------------------------------------------
 step "Installing Component Files to: ${TARGET_DIR}..."
 
@@ -153,7 +238,16 @@ cp -f "${SCRIPT_DIR}/LyricTheme.qml" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/lyric_listener.py" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/shell.qml" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/run.sh" "$TARGET_DIR/"
-[[ -f "${SCRIPT_DIR}/config.json" ]] && cp -n "${SCRIPT_DIR}/config.json" "$TARGET_DIR/" || true
+
+# Preserve existing user configuration
+if [[ -f "${TARGET_DIR}/config.json" ]]; then
+    info "Preserving existing user preferences in ${TARGET_DIR}/config.json"
+else
+    if [[ -f "${SCRIPT_DIR}/config.json" ]]; then
+        cp "${SCRIPT_DIR}/config.json" "$TARGET_DIR/"
+        info "Installed default config.json"
+    fi
+fi
 
 chmod +x "${TARGET_DIR}/lyric_listener.py"
 chmod +x "${TARGET_DIR}/run.sh"
@@ -161,7 +255,7 @@ chmod +x "${TARGET_DIR}/run.sh"
 success "Installed files to ${TARGET_DIR}."
 
 # ------------------------------------------------------------------------------
-# 6. Create Convenient Binary Wrapper
+# 8. Create Convenient Binary Wrapper
 # ------------------------------------------------------------------------------
 step "Creating Executable Wrapper in ${BIN_DIR}/quickshell-lyricbar..."
 
@@ -183,7 +277,7 @@ chmod +x "${BIN_DIR}/quickshell-lyricbar"
 success "Created ${BIN_DIR}/quickshell-lyricbar"
 
 # ------------------------------------------------------------------------------
-# 7. Configure HyprGlass (Liquid Glass Integration)
+# 9. Configure HyprGlass (Liquid Glass Integration)
 # ------------------------------------------------------------------------------
 step "Checking HyprGlass Composition Layer Settings..."
 
@@ -208,7 +302,7 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# 8. Configure Autostart on Boot / Login
+# 10. Configure Autostart on Boot / Login
 # ------------------------------------------------------------------------------
 step "Configuring Autostart on Boot..."
 
@@ -251,11 +345,17 @@ EOF
 success "Configured XDG desktop autostart entry."
 
 # ------------------------------------------------------------------------------
-# 9. Finished & Next Steps
+# 11. Finished & Next Steps
 # ------------------------------------------------------------------------------
-printf "\n${C_GREEN}${C_BOLD}======================================================${C_RESET}\n"
-printf "${C_GREEN}${C_BOLD}   Quickshell Floating LyricBar Successfully Installed! ${C_RESET}\n"
-printf "${C_GREEN}${C_BOLD}======================================================${C_RESET}\n\n"
+if [[ "$IS_INSTALLED" -eq 1 || "$REPAIR" -eq 1 ]]; then
+    printf "\n${C_GREEN}${C_BOLD}======================================================${C_RESET}\n"
+    printf "${C_GREEN}${C_BOLD}   Quickshell Floating LyricBar Successfully Repaired / Updated! ${C_RESET}\n"
+    printf "${C_GREEN}${C_BOLD}======================================================${C_RESET}\n\n"
+else
+    printf "\n${C_GREEN}${C_BOLD}======================================================${C_RESET}\n"
+    printf "${C_GREEN}${C_BOLD}   Quickshell Floating LyricBar Successfully Installed! ${C_RESET}\n"
+    printf "${C_GREEN}${C_BOLD}======================================================${C_RESET}\n\n"
+fi
 
 info "How to run:"
 printf "  • Run directly:       ${C_BOLD}quickshell-lyricbar${C_RESET}  (or ${C_BOLD}qs -c lyricbar${C_RESET})\n"
@@ -270,7 +370,7 @@ printf "  ${C_BOLD}exec-once = quickshell-lyricbar --background${C_RESET}\n\n"
 info "Hyprland Keybinding Example:"
 printf "  ${C_BOLD}bind = SUPER, Y, exec, qs -c lyricbar ipc call lyricbar toggle${C_RESET}\n\n"
 
-if [[ "$START_NOW" -eq 1 ]]; then
+if [[ "$START_NOW" -eq 1 || "$WAS_RUNNING" -eq 1 ]]; then
     step "Starting Quickshell LyricBar..."
     "${BIN_DIR}/quickshell-lyricbar" --background
     success "LyricBar started in background."

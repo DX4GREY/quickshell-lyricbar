@@ -100,6 +100,16 @@ cd quickshell-lyricbar
 ./install.sh
 ```
 
+If LyricBar is already installed on the system, the installer detects the existing setup and presents an interactive menu to Repair / Update or Uninstall. You can also supply flags directly:
+
+```bash
+# Repair or update an existing installation
+./install.sh --repair
+
+# Completely uninstall LyricBar
+./install.sh --uninstall
+```
+
 ### System Prerequisites
 
 Ensure the following packages are installed on your distribution:
@@ -265,7 +275,9 @@ quickshell-lyricbar --kill
 ./install.sh --uninstall
 ```
 
-The uninstaller removes component files from `~/.config/quickshell/lyricbar/` and the executable wrapper from `~/.local/bin/quickshell-lyricbar`.
+Alternatively, running `./install.sh` on an existing installation displays an interactive menu where option `2` triggers complete removal.
+
+The uninstaller removes component files from `~/.config/quickshell/lyricbar/`, the executable wrapper from `~/.local/bin/quickshell-lyricbar`, and desktop autostart configurations.
 
 ---
 
