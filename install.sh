@@ -243,13 +243,25 @@ cp -f "${SCRIPT_DIR}/lyric_listener.py" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/shell.qml" "$TARGET_DIR/"
 cp -f "${SCRIPT_DIR}/run.sh" "$TARGET_DIR/"
 
-# Preserve existing user configuration
+# Configure user preferences (set autoHideOnStop to true on install/repair)
 if [[ -f "${TARGET_DIR}/config.json" ]]; then
-    info "Preserving existing user preferences in ${TARGET_DIR}/config.json"
+    python3 -c "
+import json
+cfg_path = '${TARGET_DIR}/config.json'
+try:
+    with open(cfg_path, 'r') as f:
+        data = json.load(f)
+except Exception:
+    data = {}
+data['autoHideOnStop'] = True
+with open(cfg_path, 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null || true
+    info "Set autoHideOnStop to true and preserved other preferences in ${TARGET_DIR}/config.json"
 else
     if [[ -f "${SCRIPT_DIR}/config.json" ]]; then
         cp "${SCRIPT_DIR}/config.json" "$TARGET_DIR/"
-        info "Installed default config.json"
+        info "Installed default config.json with autoHideOnStop enabled"
     fi
 fi
 

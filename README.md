@@ -202,7 +202,7 @@ User preferences are persisted in `~/.config/quickshell/lyricbar/config.json`:
 
 ```json
 {
-  "autoHideOnStop": false,
+  "autoHideOnStop": true,
   "anchorTop": false,
   "demoMode": false
 }
@@ -210,7 +210,7 @@ User preferences are persisted in `~/.config/quickshell/lyricbar/config.json`:
 
 | Property | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `autoHideOnStop` | Boolean | `false` | Automatically hides the capsule when playback is stopped or paused, and restores it when playback resumes. |
+| `autoHideOnStop` | Boolean | `true` | Automatically hides the capsule when playback is stopped or paused, and restores it when playback resumes. |
 | `anchorTop` | Boolean | `false` | Anchors the capsule to the top margin of the screen instead of the bottom. |
 | `demoMode` | Boolean | `false` | Runs internal synchronized sample lyrics for UI testing without an active media player. |
 

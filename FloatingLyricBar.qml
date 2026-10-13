@@ -22,7 +22,7 @@ PanelWindow {
     // ==========================================
     property bool showing: true
     property bool compact: false
-    property bool autoHideOnStop: false
+    property bool autoHideOnStop: true
     property bool demoMode: Quickshell.env("QS_LYRIC_DEMO") === "1"
     property bool settingsOpen: false
     property bool anchorTop: false
