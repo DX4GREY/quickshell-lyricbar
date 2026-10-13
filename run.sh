@@ -68,6 +68,10 @@ else
 fi
 
 if [ "$DAEMON_FLAG" -eq 1 ]; then
+    if pgrep -f "qs.*lyricbar" > /dev/null 2>&1; then
+        echo "LyricBar is already running."
+        exit 0
+    fi
     nohup qs -c lyricbar > /dev/null 2>&1 &
     echo "LyricBar started in background (PID: $!)."
 else

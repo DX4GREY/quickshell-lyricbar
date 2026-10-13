@@ -94,6 +94,16 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         rm -f "${BIN_DIR}/quickshell-lyricbar"
         success "Removed binary link: ${BIN_DIR}/quickshell-lyricbar"
     fi
+
+    # Clean up autostart configurations
+    HYPR_CUSTOM_EXECS="${XDG_CONFIG_HOME}/hypr/custom/execs.lua"
+    if [[ -f "$HYPR_CUSTOM_EXECS" ]]; then
+        sed -i '/quickshell-lyricbar/d' "$HYPR_CUSTOM_EXECS" 2>/dev/null || true
+    fi
+    XDG_AUTOSTART="${XDG_CONFIG_HOME}/autostart/quickshell-lyricbar.desktop"
+    if [[ -f "$XDG_AUTOSTART" ]]; then
+        rm -f "$XDG_AUTOSTART"
+    fi
     
     success "Quickshell LyricBar successfully uninstalled."
     exit 0
@@ -198,7 +208,50 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# 8. Finished & Next Steps
+# 8. Configure Autostart on Boot / Login
+# ------------------------------------------------------------------------------
+step "Configuring Autostart on Boot..."
+
+HYPR_CUSTOM_EXECS="${XDG_CONFIG_HOME}/hypr/custom/execs.lua"
+
+if [[ -f "$HYPR_CUSTOM_EXECS" ]]; then
+    if grep -q "quickshell-lyricbar" "$HYPR_CUSTOM_EXECS"; then
+        success "Autostart is already configured in $HYPR_CUSTOM_EXECS."
+    else
+        info "Adding LyricBar to $HYPR_CUSTOM_EXECS..."
+        if grep -q 'hl.on("hyprland.start"' "$HYPR_CUSTOM_EXECS"; then
+            sed -i '/hl.on("hyprland.start"/a \    hl.exec_cmd("sleep 1 && quickshell-lyricbar --background")' "$HYPR_CUSTOM_EXECS"
+        else
+            cat << 'EOF' >> "$HYPR_CUSTOM_EXECS"
+
+-- Autostart Quickshell LyricBar
+hl.on("hyprland.start", function ()
+    hl.exec_cmd("sleep 1 && quickshell-lyricbar --background")
+end)
+EOF
+        fi
+        success "Configured autostart in $HYPR_CUSTOM_EXECS."
+    fi
+fi
+
+# Configure XDG desktop autostart entry for system compatibility
+AUTOSTART_DIR="${XDG_CONFIG_HOME}/autostart"
+mkdir -p "$AUTOSTART_DIR"
+cat << EOF > "${AUTOSTART_DIR}/quickshell-lyricbar.desktop"
+[Desktop Entry]
+Type=Application
+Name=Quickshell LyricBar
+Comment=Floating synchronized Liquid Glass lyric bar for Quickshell
+Exec=${BIN_DIR}/quickshell-lyricbar --background
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+EOF
+success "Configured XDG desktop autostart entry."
+
+# ------------------------------------------------------------------------------
+# 9. Finished & Next Steps
 # ------------------------------------------------------------------------------
 printf "\n${C_GREEN}${C_BOLD}======================================================${C_RESET}\n"
 printf "${C_GREEN}${C_BOLD}   Quickshell Floating LyricBar Successfully Installed! ${C_RESET}\n"
