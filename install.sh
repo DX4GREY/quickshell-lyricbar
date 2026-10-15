@@ -277,6 +277,7 @@ step "Creating Executable Wrapper in ${BIN_DIR}/quickshell-lyricbar..."
 
 cat << 'EOF' > "${BIN_DIR}/quickshell-lyricbar"
 #!/usr/bin/env bash
+export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
 if [[ "${1:-}" == "ipc" ]]; then
     shift
     exec qs -c lyricbar ipc --any-display "$@"
@@ -291,6 +292,21 @@ EOF
 
 chmod +x "${BIN_DIR}/quickshell-lyricbar"
 success "Created ${BIN_DIR}/quickshell-lyricbar"
+
+# Ensure BIN_DIR is in PATH for fish shell if installed
+if command -v fish >/dev/null 2>&1 && [[ -d "${XDG_CONFIG_HOME}/fish" ]]; then
+    FISH_CONF_DIR="${XDG_CONFIG_HOME}/fish/conf.d"
+    mkdir -p "$FISH_CONF_DIR"
+    if [[ ! -f "${FISH_CONF_DIR}/paths.fish" ]] || ! grep -q '\.local/bin' "${FISH_CONF_DIR}/paths.fish"; then
+        echo 'fish_add_path -g $HOME/.local/bin' >> "${FISH_CONF_DIR}/paths.fish"
+        info "Added ~/.local/bin to fish PATH in ${FISH_CONF_DIR}/paths.fish"
+    fi
+fi
+
+# Ensure BIN_DIR is in PATH for bash shell
+if [[ -f "${HOME}/.bashrc" ]] && ! grep -q '\.local/bin' "${HOME}/.bashrc"; then
+    echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
+fi
 
 # ------------------------------------------------------------------------------
 # 9. Configure HyprGlass (Liquid Glass Integration)
@@ -322,21 +338,43 @@ fi
 # ------------------------------------------------------------------------------
 step "Configuring Autostart on Boot..."
 
-HYPR_CUSTOM_EXECS="${XDG_CONFIG_HOME}/hypr/custom/execs.lua"
+# 10.1 Ensure ~/.local/bin is in Hyprland PATH via custom/env.lua
+HYPR_CUSTOM_ENV="${XDG_CONFIG_HOME}/hypr/custom/env.lua"
+if [[ -f "$HYPR_CUSTOM_ENV" ]]; then
+    if ! grep -q '\.local/bin' "$HYPR_CUSTOM_ENV"; then
+        info "Injecting ~/.local/bin into Hyprland PATH via $HYPR_CUSTOM_ENV..."
+        cat << 'EOF' >> "$HYPR_CUSTOM_ENV"
 
+-- Ensure ~/.local/bin is in PATH for Hyprland child processes
+local home_dir = os.getenv("HOME") or (HOME or "")
+local path_old = os.getenv("PATH") or ""
+if not string.find(path_old, home_dir .. "/.local/bin") then
+    hl.env("PATH", home_dir .. "/.local/bin:" .. path_old)
+end
+EOF
+        success "Configured PATH environment in $HYPR_CUSTOM_ENV."
+    else
+        success "PATH configuration already present in $HYPR_CUSTOM_ENV."
+    fi
+fi
+
+# 10.2 Configure Hyprland autostart in custom/execs.lua (Dots-Hyprland Lua style)
+HYPR_CUSTOM_EXECS="${XDG_CONFIG_HOME}/hypr/custom/execs.lua"
 if [[ -f "$HYPR_CUSTOM_EXECS" ]]; then
     if grep -q "quickshell-lyricbar" "$HYPR_CUSTOM_EXECS"; then
-        success "Autostart is already configured in $HYPR_CUSTOM_EXECS."
+        info "Updating existing LyricBar autostart command in $HYPR_CUSTOM_EXECS..."
+        sed -i '/quickshell-lyricbar/c\    hl.exec_cmd("sleep 2 && " .. (HOME or (os.getenv("HOME") or "")) .. "/.local/bin/quickshell-lyricbar --background")' "$HYPR_CUSTOM_EXECS"
+        success "Updated autostart command in $HYPR_CUSTOM_EXECS."
     else
         info "Adding LyricBar to $HYPR_CUSTOM_EXECS..."
         if grep -q 'hl.on("hyprland.start"' "$HYPR_CUSTOM_EXECS"; then
-            sed -i '/hl.on("hyprland.start"/a \    hl.exec_cmd("sleep 1 && quickshell-lyricbar --background")' "$HYPR_CUSTOM_EXECS"
+            sed -i '/hl.on("hyprland.start"/a \    hl.exec_cmd("sleep 2 && " .. (HOME or (os.getenv("HOME") or "")) .. "/.local/bin/quickshell-lyricbar --background")' "$HYPR_CUSTOM_EXECS"
         else
             cat << 'EOF' >> "$HYPR_CUSTOM_EXECS"
 
 -- Autostart Quickshell LyricBar
 hl.on("hyprland.start", function ()
-    hl.exec_cmd("sleep 1 && quickshell-lyricbar --background")
+    hl.exec_cmd("sleep 2 && " .. (HOME or (os.getenv("HOME") or "")) .. "/.local/bin/quickshell-lyricbar --background")
 end)
 EOF
         fi
@@ -344,7 +382,19 @@ EOF
     fi
 fi
 
-# Configure XDG desktop autostart entry for system compatibility
+# 10.3 Configure standard Hyprland config (hyprland.conf) if present
+HYPR_CONF="${XDG_CONFIG_HOME}/hypr/hyprland.conf"
+if [[ -f "$HYPR_CONF" ]]; then
+    if grep -q "quickshell-lyricbar" "$HYPR_CONF"; then
+        sed -i "s|.*quickshell-lyricbar.*|exec-once = sleep 2 \&\& ${BIN_DIR}/quickshell-lyricbar --background|" "$HYPR_CONF"
+        success "Updated autostart command in $HYPR_CONF."
+    else
+        printf "\n# Autostart Quickshell LyricBar\nexec-once = sleep 2 && %s/quickshell-lyricbar --background\n" "$BIN_DIR" >> "$HYPR_CONF"
+        success "Configured autostart in $HYPR_CONF."
+    fi
+fi
+
+# 10.4 Configure XDG desktop autostart entry for system compatibility
 AUTOSTART_DIR="${XDG_CONFIG_HOME}/autostart"
 mkdir -p "$AUTOSTART_DIR"
 cat << EOF > "${AUTOSTART_DIR}/quickshell-lyricbar.desktop"
@@ -380,8 +430,8 @@ printf "  • Run in Background:  ${C_BOLD}quickshell-lyricbar --background${C_R
 printf "  • Stop instance:      ${C_BOLD}quickshell-lyricbar --kill${C_RESET}\n\n"
 
 info "Autostart in Hyprland:"
-printf "  Add the following line to your ${C_CYAN}~/.config/hypr/hyprland/execs.lua${C_RESET} or ${C_CYAN}hyprland.conf${C_RESET}:\n"
-printf "  ${C_BOLD}exec-once = quickshell-lyricbar --background${C_RESET}\n\n"
+printf "  Ensure the following line is configured in ${C_CYAN}~/.config/hypr/custom/execs.lua${C_RESET} or ${C_CYAN}hyprland.conf${C_RESET}:\n"
+printf "  ${C_BOLD}exec-once = sleep 2 && ~/.local/bin/quickshell-lyricbar --background${C_RESET}\n\n"
 
 info "Hyprland Keybinding Example:"
 printf "  ${C_BOLD}bind = SUPER, Y, exec, qs -c lyricbar ipc call lyricbar toggle${C_RESET}\n\n"

@@ -148,20 +148,20 @@ To prevent collisions with standard Hyprland system hotkeys (specifically `SUPER
 ## Hyprland Integration
 
 ### 1. Autostart Configuration
-The installer automatically registers LyricBar autostart in `~/.config/hypr/custom/execs.lua` and creates an XDG autostart desktop entry in `~/.config/autostart/quickshell-lyricbar.desktop`.
+The installer automatically registers LyricBar autostart in `~/.config/hypr/custom/execs.lua`, ensures `~/.local/bin` is exported in `~/.config/hypr/custom/env.lua`, and creates an XDG autostart desktop entry in `~/.config/autostart/quickshell-lyricbar.desktop`.
 
 For manual Hyprland Lua configuration, ensure this line exists in `~/.config/hypr/custom/execs.lua`:
 
 ```lua
 hl.on("hyprland.start", function ()
-    hl.exec_cmd("sleep 1 && quickshell-lyricbar --background")
+    hl.exec_cmd("sleep 2 && " .. (HOME or (os.getenv("HOME") or "")) .. "/.local/bin/quickshell-lyricbar --background")
 end)
 ```
 
 For standard `hyprland.conf` without Lua:
 
 ```ini
-exec-once = quickshell-lyricbar --background
+exec-once = sleep 2 && ~/.local/bin/quickshell-lyricbar --background
 ```
 
 ### 2. Register Hotkeys in Hyprland
