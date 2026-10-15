@@ -204,6 +204,18 @@ User preferences are persisted in `~/.config/quickshell/lyricbar/config.json`:
 {
   "autoHideOnStop": true,
   "anchorTop": false,
+  "horizontalAlign": "center",
+  "offsetY": 28,
+  "marginSide": 32,
+  "showProgressBar": true,
+  "showArtistBadge": true,
+  "showPlayButton": true,
+  "showPulseDot": true,
+  "enableParallax": true,
+  "fontSizeDelta": 0,
+  "bindToggle": "SUPER + Y",
+  "bindToggleMini": "SUPER + ALT + Y",
+  "bindToggleSettings": "SUPER + CTRL + Y",
   "demoMode": false
 }
 ```
@@ -211,7 +223,19 @@ User preferences are persisted in `~/.config/quickshell/lyricbar/config.json`:
 | Property | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `autoHideOnStop` | Boolean | `true` | Automatically hides the capsule when playback is stopped or paused, and restores it when playback resumes. |
-| `anchorTop` | Boolean | `false` | Anchors the capsule to the top margin of the screen instead of the bottom. |
+| `anchorTop` | Boolean | `false` | Positions the capsule at the top screen edge when `true`, or bottom screen edge when `false`. |
+| `horizontalAlign` | String | `"center"` | Horizontal positioning mode: `"center"`, `"left"`, or `"right"`. |
+| `offsetY` | Integer | `28` | Vertical edge offset distance in pixels (`16`, `28`, `44`, `64`). |
+| `marginSide` | Integer | `32` | Side edge offset distance in pixels when aligned left or right. |
+| `showProgressBar` | Boolean | `true` | Toggles the active track duration progress bar along the capsule bottom. |
+| `showArtistBadge` | Boolean | `true` | Toggles the glass artist name pill badge. |
+| `showPlayButton` | Boolean | `true` | Toggles the media disc play/pause button. |
+| `showPulseDot` | Boolean | `true` | Toggles the pulsating synchronicity dot during lyric playback. |
+| `enableParallax` | Boolean | `true` | Enables subtle 3D interactive parallax tilt following cursor motion. |
+| `fontSizeDelta` | Integer | `0` | Lyric text size adjustment (`-2` for 10px, `0` for 12px, `2` for 14px, `4` for 16px). |
+| `bindToggle` | String | `"SUPER + Y"` | Keybinding to toggle LyricBar visibility. |
+| `bindToggleMini` | String | `"SUPER + ALT + Y"` | Keybinding to toggle compact mini-pill mode. |
+| `bindToggleSettings` | String | `"SUPER + CTRL + Y"` | Keybinding to open/close settings modal. |
 | `demoMode` | Boolean | `false` | Runs internal synchronized sample lyrics for UI testing without an active media player. |
 
 ---

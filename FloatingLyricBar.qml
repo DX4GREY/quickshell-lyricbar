@@ -18,7 +18,7 @@ PanelWindow {
     }
 
     // ==========================================
-    // 2. State & Media Properties
+    // 2. State, Customization & Media Properties
     // ==========================================
     property bool showing: true
     property bool compact: false
@@ -26,6 +26,18 @@ PanelWindow {
     property bool demoMode: Quickshell.env("QS_LYRIC_DEMO") === "1"
     property bool settingsOpen: false
     property bool anchorTop: false
+    property string horizontalAlign: "center" // "center", "left", "right"
+    property int offsetY: 28                  // 16, 28, 44, 64
+    property int marginSide: 32               // 16, 32, 48
+    property bool showProgressBar: true
+    property bool showArtistBadge: true
+    property bool showPlayButton: true
+    property bool showPulseDot: true
+    property bool enableParallax: true
+    property int fontSizeDelta: 0             // -2, 0, 2, 4
+    property string bindToggle: "SUPER + Y"
+    property string bindToggleMini: "SUPER + ALT + Y"
+    property string bindToggleSettings: "SUPER + CTRL + Y"
     property string keybindStatusMsg: ""
 
     // 3D Parallax Tilt
@@ -59,6 +71,39 @@ PanelWindow {
         return isPlaying ? "♪ ♪ ♪" : "LyricBar (No media playing)";
     }
 
+    // Direct Media Control Methods
+    function playPause(): void {
+        if (root.activePlayer && root.activePlayer.length > 0) {
+            Quickshell.execDetached(["bash", "-c", `playerctl -p "${root.activePlayer}" play-pause 2>/dev/null || playerctl play-pause`]);
+        } else {
+            Quickshell.execDetached(["playerctl", "play-pause"]);
+        }
+    }
+
+    function next(): void {
+        if (root.activePlayer && root.activePlayer.length > 0) {
+            Quickshell.execDetached(["bash", "-c", `playerctl -p "${root.activePlayer}" next 2>/dev/null || playerctl next`]);
+        } else {
+            Quickshell.execDetached(["playerctl", "next"]);
+        }
+    }
+
+    function prev(): void {
+        if (root.activePlayer && root.activePlayer.length > 0) {
+            Quickshell.execDetached(["bash", "-c", `playerctl -p "${root.activePlayer}" previous 2>/dev/null || playerctl previous`]);
+        } else {
+            Quickshell.execDetached(["playerctl", "previous"]);
+        }
+    }
+
+    function changeVolume(deltaStr): void {
+        if (root.activePlayer && root.activePlayer.length > 0) {
+            Quickshell.execDetached(["bash", "-c", `playerctl -p "${root.activePlayer}" volume ${deltaStr} 2>/dev/null || playerctl volume ${deltaStr}`]);
+        } else {
+            Quickshell.execDetached(["playerctl", "volume", deltaStr]);
+        }
+    }
+
     // ==========================================
     // 3. Layer Shell Window Positioning & Click Mask
     // ==========================================
@@ -69,10 +114,10 @@ PanelWindow {
         right: true
     }
     margins {
-        top: root.anchorTop ? 28 : 0
-        bottom: !root.anchorTop ? 28 : 0
+        top: root.anchorTop ? root.offsetY : 0
+        bottom: !root.anchorTop ? root.offsetY : 0
     }
-    implicitHeight: root.settingsOpen ? 370 : (theme.barHeight + 20)
+    implicitHeight: root.settingsOpen ? 450 : (theme.barHeight + root.offsetY + 30)
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
 
@@ -122,73 +167,55 @@ PanelWindow {
         function openSettings(): void { root.settingsOpen = true; }
         function closeSettings(): void { root.settingsOpen = false; }
         function toggleSettings(): void { root.settingsOpen = !root.settingsOpen; }
-        function playPause(): void {
-            if (root.activePlayer) {
-                mediaProcess.run(["playerctl", "-p", root.activePlayer, "play-pause"]);
-            } else {
-                mediaProcess.run(["playerctl", "play-pause"]);
-            }
-        }
-        function next(): void {
-            if (root.activePlayer) {
-                mediaProcess.run(["playerctl", "-p", root.activePlayer, "next"]);
-            } else {
-                mediaProcess.run(["playerctl", "next"]);
-            }
-        }
-        function prev(): void {
-            if (root.activePlayer) {
-                mediaProcess.run(["playerctl", "-p", root.activePlayer, "previous"]);
-            } else {
-                mediaProcess.run(["playerctl", "previous"]);
-            }
-        }
+        function playPause(): void { root.playPause(); }
+        function next(): void { root.next(); }
+        function prev(): void { root.prev(); }
         function applyHyprlandKeybinds(): void { root.syncKeybinds(); }
-    }
-
-    Process {
-        id: mediaProcess
-        function run(args) {
-            command = args;
-            running = true;
-        }
     }
 
     // Process to apply keybindings to Hyprland custom keybinds file
     Process {
         id: syncProcess
         function run(args) {
+            if (running) running = false;
             command = args;
             running = true;
         }
         onExited: {
-            root.keybindStatusMsg = "Keybinds Synced!";
+            root.keybindStatusMsg = "Keybinds Synced & Active!";
             statusClearTimer.restart();
         }
     }
 
     Timer {
         id: statusClearTimer
-        interval: 2800
+        interval: 3000
         repeat: false
         onTriggered: root.keybindStatusMsg = ""
     }
 
     function syncKeybinds() {
+        root.saveConfig();
+        const bToggle = root.bindToggle || "SUPER + Y";
+        const bMini = root.bindToggleMini || "SUPER + ALT + Y";
+        const bSettings = root.bindToggleSettings || "SUPER + CTRL + Y";
+
         const cmdScript = `
         KEYBIND_FILE="$HOME/.config/hypr/custom/keybinds.lua"
         mkdir -p "$(dirname "$KEYBIND_FILE")"
         touch "$KEYBIND_FILE"
-        if ! grep -q "lyricbar" "$KEYBIND_FILE"; then
-            cat << 'EOF' >> "$KEYBIND_FILE"
+        sed -i '/-- Quickshell LyricBar Keybindings/,/toggleSettings/d' "$KEYBIND_FILE" 2>/dev/null || true
+        sed -i '/qs -c lyricbar.*toggle/d' "$KEYBIND_FILE" 2>/dev/null || true
+
+        cat << 'EOF' >> "$KEYBIND_FILE"
 
 -- Quickshell LyricBar Keybindings
-hl.bind("SUPER + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
-hl.bind("SUPER + ALT + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
-hl.bind("SUPER + CTRL + Y", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
+hl.bind("${bToggle}", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggle"), { description = "LyricBar: Toggle visibility" })
+hl.bind("${bMini}", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleMini"), { description = "LyricBar: Toggle mini pill" })
+hl.bind("${bSettings}", hl.dsp.exec_cmd("qs -c lyricbar ipc --any-display call lyricbar toggleSettings"), { description = "LyricBar: Toggle settings" })
 EOF
-        fi
-        SIG=$(basename /run/user/$(id -u)/hypr/*_* 2>/dev/null || echo "")
+
+        SIG=$(basename /run/user/$(id -u)/hypr/*_* 2>/dev/null | head -n 1 || echo "")
         if [ -n "$SIG" ]; then
             HYPRLAND_INSTANCE_SIGNATURE=$SIG hyprctl reload >/dev/null 2>&1 || true
         fi
@@ -205,23 +232,50 @@ EOF
         id: userConfigFile
         path: root.userConfigPath
         watchChanges: true
-        onLoadFailed: (error) => {}
-        onLoadedChanged: {
-            if (loaded) {
-                try {
-                    const cfg = JSON.parse(userConfigFile.text());
-                    if (cfg.autoHideOnStop !== undefined) root.autoHideOnStop = cfg.autoHideOnStop;
-                    if (cfg.anchorTop !== undefined) root.anchorTop = cfg.anchorTop;
-                    if (cfg.demoMode !== undefined && Quickshell.env("QS_LYRIC_DEMO") !== "1") root.demoMode = cfg.demoMode;
-                } catch(e) {}
-            }
-        }
+        printErrors: false
+        onLoaded: root.loadConfigFromDisk()
+        onLoadedChanged: if (loaded) root.loadConfigFromDisk()
+    }
+
+    function loadConfigFromDisk() {
+        try {
+            const raw = userConfigFile.text();
+            if (!raw || raw.trim().length === 0) return;
+            const cfg = JSON.parse(raw);
+            if (cfg.autoHideOnStop !== undefined) root.autoHideOnStop = Boolean(cfg.autoHideOnStop);
+            if (cfg.anchorTop !== undefined) root.anchorTop = Boolean(cfg.anchorTop);
+            if (cfg.horizontalAlign !== undefined) root.horizontalAlign = String(cfg.horizontalAlign);
+            if (cfg.offsetY !== undefined) root.offsetY = Number(cfg.offsetY);
+            if (cfg.marginSide !== undefined) root.marginSide = Number(cfg.marginSide);
+            if (cfg.showProgressBar !== undefined) root.showProgressBar = Boolean(cfg.showProgressBar);
+            if (cfg.showArtistBadge !== undefined) root.showArtistBadge = Boolean(cfg.showArtistBadge);
+            if (cfg.showPlayButton !== undefined) root.showPlayButton = Boolean(cfg.showPlayButton);
+            if (cfg.showPulseDot !== undefined) root.showPulseDot = Boolean(cfg.showPulseDot);
+            if (cfg.enableParallax !== undefined) root.enableParallax = Boolean(cfg.enableParallax);
+            if (cfg.fontSizeDelta !== undefined) root.fontSizeDelta = Number(cfg.fontSizeDelta);
+            if (cfg.bindToggle !== undefined && cfg.bindToggle !== "") root.bindToggle = String(cfg.bindToggle);
+            if (cfg.bindToggleMini !== undefined && cfg.bindToggleMini !== "") root.bindToggleMini = String(cfg.bindToggleMini);
+            if (cfg.bindToggleSettings !== undefined && cfg.bindToggleSettings !== "") root.bindToggleSettings = String(cfg.bindToggleSettings);
+            if (cfg.demoMode !== undefined && Quickshell.env("QS_LYRIC_DEMO") !== "1") root.demoMode = Boolean(cfg.demoMode);
+        } catch(e) {}
     }
 
     function saveConfig() {
         const cfg = {
             "autoHideOnStop": root.autoHideOnStop,
             "anchorTop": root.anchorTop,
+            "horizontalAlign": root.horizontalAlign,
+            "offsetY": root.offsetY,
+            "marginSide": root.marginSide,
+            "showProgressBar": root.showProgressBar,
+            "showArtistBadge": root.showArtistBadge,
+            "showPlayButton": root.showPlayButton,
+            "showPulseDot": root.showPulseDot,
+            "enableParallax": root.enableParallax,
+            "fontSizeDelta": root.fontSizeDelta,
+            "bindToggle": root.bindToggle,
+            "bindToggleMini": root.bindToggleMini,
+            "bindToggleSettings": root.bindToggleSettings,
             "demoMode": root.demoMode
         };
         try {
@@ -351,7 +405,7 @@ EOF
         id: lyricMeasure
         visible: false
         font.family: theme.fontFamily
-        font.pixelSize: theme.fontSizeMain
+        font.pixelSize: theme.fontSizeMain + root.fontSizeDelta
         font.bold: true
         renderType: Text.NativeRendering
         text: root.targetLyric
@@ -402,6 +456,91 @@ EOF
         }
     }
 
+    // Interactive Pill Toggle / Select Button
+    component GlassPillBtn: Rectangle {
+        id: pbtn
+        property string text: ""
+        property bool selected: false
+        signal clicked()
+
+        implicitWidth: pbtnLabel.implicitWidth + 16
+        implicitHeight: 24
+        radius: 6
+        color: pbtn.selected
+               ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.28)
+               : (pbtnMouse.containsMouse ? Qt.rgba(theme.bgCard.r, theme.bgCard.g, theme.bgCard.b, 0.7) : Qt.rgba(theme.bgCard.r, theme.bgCard.g, theme.bgCard.b, 0.35))
+        border.color: pbtn.selected ? theme.accent : theme.glassBorder
+        border.width: 1
+
+        scale: pbtnMouse.pressed ? 0.94 : (pbtnMouse.containsMouse ? 1.02 : 1.0)
+        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on border.color { ColorAnimation { duration: 150 } }
+
+        Text {
+            id: pbtnLabel
+            anchors.centerIn: parent
+            text: pbtn.text
+            font.family: theme.fontFamily
+            font.pixelSize: 10
+            font.bold: pbtn.selected
+            renderType: Text.NativeRendering
+            color: pbtn.selected ? theme.accent : (pbtnMouse.containsMouse ? theme.text : theme.textDim)
+        }
+
+        MouseArea {
+            id: pbtnMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: pbtn.clicked()
+        }
+    }
+
+    // Editable Keybinding Input Field
+    component GlassKeyInput: Rectangle {
+        id: gki
+        property alias text: input.text
+        property string placeholder: ""
+        signal committed(string val)
+
+        implicitHeight: 24
+        implicitWidth: 165
+        radius: 6
+        color: Qt.rgba(theme.bgCard.r, theme.bgCard.g, theme.bgCard.b, 0.55)
+        border.color: input.activeFocus ? theme.accent : theme.glassBorder
+        border.width: 1
+
+        Behavior on border.color { ColorAnimation { duration: 160 } }
+
+        TextInput {
+            id: input
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            verticalAlignment: TextInput.AlignVCenter
+            font.family: theme.fontFamily
+            font.pixelSize: 10
+            font.bold: true
+            renderType: Text.NativeRendering
+            color: theme.accent
+            selectByMouse: true
+            onEditingFinished: gki.committed(input.text.trim())
+        }
+
+        Text {
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            verticalAlignment: Text.AlignVCenter
+            text: gki.placeholder
+            font.family: theme.fontFamily
+            font.pixelSize: 10
+            renderType: Text.NativeRendering
+            color: theme.textFaint
+            visible: input.text.length === 0 && !input.activeFocus
+        }
+    }
+
     // Keyboard Key badge component for Settings Modal
     component KeyBadge: Rectangle {
         id: kbadge
@@ -431,7 +570,11 @@ EOF
     // ==========================================
     Item {
         id: cardWrapper
-        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.horizontalCenter: (root.horizontalAlign === "center") ? parent.horizontalCenter : undefined
+        anchors.left: (root.horizontalAlign === "left") ? parent.left : undefined
+        anchors.right: (root.horizontalAlign === "right") ? parent.right : undefined
+        anchors.leftMargin: (root.horizontalAlign === "left") ? root.marginSide : 0
+        anchors.rightMargin: (root.horizontalAlign === "right") ? root.marginSide : 0
         anchors.bottom: !root.anchorTop ? parent.bottom : undefined
         anchors.top: root.anchorTop ? parent.top : undefined
 
@@ -495,15 +638,19 @@ EOF
             visible: opacity > 0.001
             opacity: root.settingsOpen ? 1.0 : 0.0
             scale: root.settingsOpen ? 1.0 : 0.90
-            y: root.settingsOpen ? 0 : 18
+            y: root.settingsOpen ? 0 : (root.anchorTop ? -18 : 18)
 
-            anchors.horizontalCenter: lyricCard.horizontalCenter
+            property int currentTab: 0 // 0: Display & Pos, 1: Keybinds, 2: Styling & Effects
+
+            anchors.horizontalCenter: (root.horizontalAlign === "center") ? lyricCard.horizontalCenter : undefined
+            anchors.left: (root.horizontalAlign === "left") ? parent.left : undefined
+            anchors.right: (root.horizontalAlign === "right") ? parent.right : undefined
             anchors.bottom: !root.anchorTop ? lyricCard.top : undefined
             anchors.top: root.anchorTop ? lyricCard.bottom : undefined
             anchors.margins: 10
 
-            width: 480
-            height: 270
+            width: 530
+            height: 350
             radius: 18
             color: theme.glassBg
             border.color: theme.glassBorder
@@ -543,9 +690,9 @@ EOF
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 14
-                spacing: 8
+                spacing: 10
 
-                // Header Row
+                // Header Row (Title, Tab Buttons, Close)
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
@@ -553,13 +700,13 @@ EOF
                     Text {
                         text: "󰒓"
                         font.family: theme.iconFont
-                        font.pixelSize: 14
+                        font.pixelSize: 15
                         renderType: Text.NativeRendering
                         color: theme.accent
                     }
 
                     Text {
-                        text: "LyricBar Settings & Keybinds"
+                        text: "LyricBar Settings"
                         font.family: theme.fontFamily
                         font.pixelSize: 12
                         font.bold: true
@@ -569,175 +716,413 @@ EOF
 
                     Item { Layout.fillWidth: true }
 
+                    // Segmented Tab Bar
+                    Row {
+                        spacing: 4
+                        Layout.alignment: Qt.AlignVCenter
+
+                        GlassPillBtn {
+                            text: "󰒓 Display"
+                            selected: settingsCard.currentTab === 0
+                            onClicked: settingsCard.currentTab = 0
+                        }
+                        GlassPillBtn {
+                            text: "󰌌 Keybinds"
+                            selected: settingsCard.currentTab === 1
+                            onClicked: settingsCard.currentTab = 1
+                        }
+                        GlassPillBtn {
+                            text: "󰏘 Style"
+                            selected: settingsCard.currentTab === 2
+                            onClicked: settingsCard.currentTab = 2
+                        }
+                    }
+
                     GlassActionBtn {
                         icon: "󰅖"
+                        hoverColor: theme.danger
                         onClicked: root.settingsOpen = false
                     }
                 }
 
-                // Keybindings Section Table
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 5
-
-                    // Row: Toggle Visibility
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "Toggle LyricBar"
-                            font.family: theme.fontFamily
-                            font.pixelSize: 11
-                            color: theme.textDim
-                            renderType: Text.NativeRendering
-                        }
-                        Item { Layout.fillWidth: true }
-                        KeyBadge { keyText: "SUPER + Y" }
-                    }
-
-                    // Row: Mini Pill Mode
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "Compact Mini-Pill"
-                            font.family: theme.fontFamily
-                            font.pixelSize: 11
-                            color: theme.textDim
-                            renderType: Text.NativeRendering
-                        }
-                        Item { Layout.fillWidth: true }
-                        KeyBadge { keyText: "SUPER + ALT + Y" }
-                    }
-
-                    // Row: Settings Modal
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "Open / Close Settings"
-                            font.family: theme.fontFamily
-                            font.pixelSize: 11
-                            color: theme.textDim
-                            renderType: Text.NativeRendering
-                        }
-                        Item { Layout.fillWidth: true }
-                        KeyBadge { keyText: "SUPER + CTRL + Y" }
-                    }
-
-                    // Row: Media controls
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: "Media Shortcuts"
-                            font.family: theme.fontFamily
-                            font.pixelSize: 11
-                            color: theme.textDim
-                            renderType: Text.NativeRendering
-                        }
-                        Item { Layout.fillWidth: true }
-                        KeyBadge { keyText: "Wheel: Volume  •  R-Click: Next  •  Mid-Click: Prev" }
-                    }
-                }
-
-                // Separator
+                // Top Separator line
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
                     color: Qt.rgba(theme.border.r, theme.border.g, theme.border.b, 0.4)
                 }
 
-                // Behavior Toggles & Action Row
-                RowLayout {
+                // Tab Content Stack
+                Item {
                     Layout.fillWidth: true
-                    spacing: 8
+                    Layout.fillHeight: true
 
-                    // Auto-Hide Switch Button
-                    Rectangle {
-                        implicitWidth: autoHideLabel.implicitWidth + 18
-                        implicitHeight: 26
-                        radius: 6
-                        color: root.autoHideOnStop ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
-                        border.color: root.autoHideOnStop ? theme.accent : theme.border
-                        border.width: 1
+                    // ==========================================
+                    // TAB 0: DISPLAY & POSITION
+                    // ==========================================
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+                        visible: opacity > 0.001
+                        opacity: settingsCard.currentTab === 0 ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 200 } }
 
-                        Text {
-                            id: autoHideLabel
-                            anchors.centerIn: parent
-                            text: "Auto-Hide: " + (root.autoHideOnStop ? "ON" : "OFF")
-                            font.family: theme.fontFamily
-                            font.pixelSize: 10
-                            font.bold: true
-                            renderType: Text.NativeRendering
-                            color: root.autoHideOnStop ? theme.accent : theme.textDim
+                        // Row: Screen Edge
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Screen Edge"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "󰁅 Bottom"
+                                selected: !root.anchorTop
+                                onClicked: { root.anchorTop = false; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "󰁝 Top"
+                                selected: root.anchorTop
+                                onClicked: { root.anchorTop = true; root.saveConfig(); }
+                            }
                         }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.autoHideOnStop = !root.autoHideOnStop;
-                                root.saveConfig();
+                        // Row: Horizontal Alignment
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Alignment"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "Left"
+                                selected: root.horizontalAlign === "left"
+                                onClicked: { root.horizontalAlign = "left"; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Center"
+                                selected: root.horizontalAlign === "center"
+                                onClicked: { root.horizontalAlign = "center"; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Right"
+                                selected: root.horizontalAlign === "right"
+                                onClicked: { root.horizontalAlign = "right"; root.saveConfig(); }
+                            }
+                        }
+
+                        // Row: Vertical Margin Offset
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Edge Offset (Y)"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "16px"
+                                selected: root.offsetY === 16
+                                onClicked: { root.offsetY = 16; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "28px"
+                                selected: root.offsetY === 28
+                                onClicked: { root.offsetY = 28; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "44px"
+                                selected: root.offsetY === 44
+                                onClicked: { root.offsetY = 44; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "64px"
+                                selected: root.offsetY === 64
+                                onClicked: { root.offsetY = 64; root.saveConfig(); }
+                            }
+                        }
+
+                        // Row: Duration Progress Bar
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Music Duration Bar"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "Show"
+                                selected: root.showProgressBar
+                                onClicked: { root.showProgressBar = true; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Hide"
+                                selected: !root.showProgressBar
+                                onClicked: { root.showProgressBar = false; root.saveConfig(); }
+                            }
+                        }
+
+                        // Row: Show/Hide Components
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Capsule Elements"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "Play/Disc: " + (root.showPlayButton ? "ON" : "OFF")
+                                selected: root.showPlayButton
+                                onClicked: { root.showPlayButton = !root.showPlayButton; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Artist: " + (root.showArtistBadge ? "ON" : "OFF")
+                                selected: root.showArtistBadge
+                                onClicked: { root.showArtistBadge = !root.showArtistBadge; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Pulse: " + (root.showPulseDot ? "ON" : "OFF")
+                                selected: root.showPulseDot
+                                onClicked: { root.showPulseDot = !root.showPulseDot; root.saveConfig(); }
                             }
                         }
                     }
 
-                    // Demo Mode Switch Button
-                    Rectangle {
-                        implicitWidth: demoLabel.implicitWidth + 18
-                        implicitHeight: 26
-                        radius: 6
-                        color: root.demoMode ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.25) : theme.glassCard
-                        border.color: root.demoMode ? theme.accent : theme.border
-                        border.width: 1
+                    // ==========================================
+                    // TAB 1: KEYBINDINGS & SHORTCUTS
+                    // ==========================================
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+                        visible: opacity > 0.001
+                        opacity: settingsCard.currentTab === 1 ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 200 } }
 
-                        Text {
-                            id: demoLabel
-                            anchors.centerIn: parent
-                            text: "Demo: " + (root.demoMode ? "ON" : "OFF")
-                            font.family: theme.fontFamily
-                            font.pixelSize: 10
-                            font.bold: true
-                            renderType: Text.NativeRendering
-                            color: root.demoMode ? theme.accent : theme.textDim
+                        // Row: Toggle Visibility
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Toggle LyricBar"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassKeyInput {
+                                text: root.bindToggle
+                                placeholder: "e.g. SUPER + Y"
+                                onCommitted: val => { if (val) { root.bindToggle = val; root.saveConfig(); } }
+                            }
                         }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.demoMode = !root.demoMode;
-                                lyricProcess.running = false;
-                                restartTimer.restart();
+                        // Row: Compact Mini-Pill
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Compact Mini-Pill"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassKeyInput {
+                                text: root.bindToggleMini
+                                placeholder: "e.g. SUPER + ALT + Y"
+                                onCommitted: val => { if (val) { root.bindToggleMini = val; root.saveConfig(); } }
+                            }
+                        }
+
+                        // Row: Settings Modal
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Open / Close Settings"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassKeyInput {
+                                text: root.bindToggleSettings
+                                placeholder: "e.g. SUPER + CTRL + Y"
+                                onCommitted: val => { if (val) { root.bindToggleSettings = val; root.saveConfig(); } }
+                            }
+                        }
+
+                        // Row: Mouse Gestures
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Mouse Shortcuts"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.textDim
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            KeyBadge { keyText: "Wheel: Vol • R-Click: Next • Mid-Click: Prev" }
+                        }
+
+                        // Row: Keybind Actions
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            GlassPillBtn {
+                                text: "Reset Defaults"
+                                onClicked: {
+                                    root.bindToggle = "SUPER + Y";
+                                    root.bindToggleMini = "SUPER + ALT + Y";
+                                    root.bindToggleSettings = "SUPER + CTRL + Y";
+                                    root.saveConfig();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: root.keybindStatusMsg !== "" ? ("󰄬 " + root.keybindStatusMsg) : "󰁯 Save & Sync Hyprland"
+                                selected: true
+                                onClicked: root.syncKeybinds()
                             }
                         }
                     }
 
-                    Item { Layout.fillWidth: true }
+                    // ==========================================
+                    // TAB 2: STYLING & BEHAVIOR
+                    // ==========================================
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+                        visible: opacity > 0.001
+                        opacity: settingsCard.currentTab === 2 ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 200 } }
 
-                    // Action: Apply Keybinds to Hyprland
-                    Rectangle {
-                        implicitWidth: syncLabel.implicitWidth + 18
-                        implicitHeight: 26
-                        radius: 6
-                        color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, syncArea.containsMouse ? 0.35 : 0.18)
-                        border.color: theme.accent
-                        border.width: 1
-
-                        Text {
-                            id: syncLabel
-                            anchors.centerIn: parent
-                            text: root.keybindStatusMsg !== "" ? root.keybindStatusMsg : "Sync Hyprland Binds"
-                            font.family: theme.fontFamily
-                            font.pixelSize: 10
-                            font.bold: true
-                            renderType: Text.NativeRendering
-                            color: theme.accent
+                        // Row: Lyric Font Size
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Lyric Font Size"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "Small (10px)"
+                                selected: root.fontSizeDelta === -2
+                                onClicked: { root.fontSizeDelta = -2; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Normal (12px)"
+                                selected: root.fontSizeDelta === 0
+                                onClicked: { root.fontSizeDelta = 0; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Large (14px)"
+                                selected: root.fontSizeDelta === 2
+                                onClicked: { root.fontSizeDelta = 2; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "XL (16px)"
+                                selected: root.fontSizeDelta === 4
+                                onClicked: { root.fontSizeDelta = 4; root.saveConfig(); }
+                            }
                         }
 
-                        MouseArea {
-                            id: syncArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.syncKeybinds()
+                        // Row: Auto-Hide
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Auto-Hide on Stop"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "Enabled"
+                                selected: root.autoHideOnStop
+                                onClicked: { root.autoHideOnStop = true; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Disabled"
+                                selected: !root.autoHideOnStop
+                                onClicked: { root.autoHideOnStop = false; root.saveConfig(); }
+                            }
+                        }
+
+                        // Row: 3D Parallax Tilt
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "3D Parallax Tilt"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "Enabled"
+                                selected: root.enableParallax
+                                onClicked: { root.enableParallax = true; root.saveConfig(); }
+                            }
+                            GlassPillBtn {
+                                text: "Disabled"
+                                selected: !root.enableParallax
+                                onClicked: { root.enableParallax = false; root.saveConfig(); }
+                            }
+                        }
+
+                        // Row: Demo Simulation Mode
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Demo Mode (Mock LRC)"
+                                font.family: theme.fontFamily
+                                font.pixelSize: 11
+                                color: theme.text
+                                renderType: Text.NativeRendering
+                            }
+                            Item { Layout.fillWidth: true }
+                            GlassPillBtn {
+                                text: "Active"
+                                selected: root.demoMode
+                                onClicked: {
+                                    root.demoMode = true;
+                                    lyricProcess.running = false;
+                                    restartTimer.restart();
+                                    root.saveConfig();
+                                }
+                            }
+                            GlassPillBtn {
+                                text: "Off"
+                                selected: !root.demoMode
+                                onClicked: {
+                                    root.demoMode = false;
+                                    lyricProcess.running = false;
+                                    restartTimer.restart();
+                                    root.saveConfig();
+                                }
+                            }
                         }
                     }
                 }
@@ -750,17 +1135,19 @@ EOF
         // ==========================================
         Rectangle {
             id: lyricCard
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.horizontalCenter: (root.horizontalAlign === "center") ? parent.horizontalCenter : undefined
+            anchors.left: (root.horizontalAlign === "left") ? parent.left : undefined
+            anchors.right: (root.horizontalAlign === "right") ? parent.right : undefined
             anchors.bottom: !root.anchorTop ? parent.bottom : undefined
             anchors.top: root.anchorTop ? parent.top : undefined
 
             // Computed content width for dynamic content-driven sizing
             readonly property real fullContentWidth: {
                 const padding = 28;
-                const playWidth = 28 + cardLayout.spacing;
-                const artistWidth = (root.trackArtist !== "" ? (artistBadge.implicitWidth + cardLayout.spacing) : 0);
+                const playWidth = (root.showPlayButton ? (28 + cardLayout.spacing) : 0);
+                const artistWidth = (root.showArtistBadge && root.trackArtist !== "" ? (artistBadge.implicitWidth + cardLayout.spacing) : 0);
                 const textWidth = Math.max(120, Math.min(460, lyricMeasure.implicitWidth + 12));
-                const pulseWidth = (root.hasLyrics && root.isPlaying ? (8 + cardLayout.spacing) : 0);
+                const pulseWidth = (root.showPulseDot && root.hasLyrics && root.isPlaying ? (8 + cardLayout.spacing) : 0);
                 const actionsWidth = 74 + cardLayout.spacing;
                 return padding + playWidth + artistWidth + textWidth + pulseWidth + actionsWidth;
             }
@@ -828,14 +1215,14 @@ EOF
                     origin.x: lyricCard.width / 2
                     origin.y: lyricCard.height / 2
                     axis { x: 1; y: 0; z: 0 }
-                    angle: root.tiltX
+                    angle: root.enableParallax ? root.tiltX : 0.0
                     Behavior on angle { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
                 },
                 Rotation {
                     origin.x: lyricCard.width / 2
                     origin.y: lyricCard.height / 2
                     axis { x: 0; y: 1; z: 0 }
-                    angle: root.tiltY
+                    angle: root.enableParallax ? root.tiltY : 0.0
                     Behavior on angle { NumberAnimation { duration: theme.animMed; easing.type: Easing.OutCubic } }
                 }
             ]
@@ -860,7 +1247,7 @@ EOF
                     NumberAnimation {
                         duration: 380
                         easing.type: Easing.OutBack
-                        easing.overshoot: 1.25
+                        easing.overshoot: 1.18
                     }
                 }
 
@@ -887,7 +1274,14 @@ EOF
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.compact = false
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            root.playPause();
+                        } else {
+                            root.compact = false;
+                        }
+                    }
                 }
             }
 
@@ -925,7 +1319,7 @@ EOF
                     radius: 1
                     color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.45)
                     width: Math.max(0, (lyricCard.width - 24) * Math.min(1.0, Math.max(0.0, root.progress)))
-                    visible: root.isPlaying && root.duration > 0
+                    visible: root.showProgressBar && root.isPlaying && root.duration > 0 && !root.compact
 
                     Behavior on width { NumberAnimation { duration: 180 } }
                     Behavior on color { ColorAnimation { duration: theme.animMed } }
@@ -940,6 +1334,11 @@ EOF
                     acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
 
                     onPositionChanged: mouse => {
+                        if (!root.enableParallax) {
+                            root.tiltX = 0;
+                            root.tiltY = 0;
+                            return;
+                        }
                         const nx = (mouse.x / lyricCard.width) - 0.5;
                         const ny = (mouse.y / lyricCard.height) - 0.5;
                         root.tiltX = -ny * 7;
@@ -961,9 +1360,9 @@ EOF
 
                     onWheel: wheel => {
                         if (wheel.angleDelta.y > 0) {
-                            mediaProcess.run(root.activePlayer ? ["playerctl", "-p", root.activePlayer, "volume", "0.05+"] : ["playerctl", "volume", "0.05+"]);
+                            root.changeVolume("0.05+");
                         } else if (wheel.angleDelta.y < 0) {
-                            mediaProcess.run(root.activePlayer ? ["playerctl", "-p", root.activePlayer, "volume", "0.05-"] : ["playerctl", "volume", "0.05-"]);
+                            root.changeVolume("0.05-");
                         }
                     }
                 }
@@ -977,6 +1376,7 @@ EOF
                     // 1. Play / Pause & Disc Button with Apple-style tactile spring
                     Rectangle {
                         id: playBtn
+                        visible: root.showPlayButton
                         Layout.alignment: Qt.AlignVCenter
                         implicitWidth: 28
                         implicitHeight: 28
@@ -1008,6 +1408,7 @@ EOF
                             id: playArea
                             anchors.fill: parent
                             hoverEnabled: true
+                            preventStealing: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.playPause()
                         }
@@ -1016,7 +1417,7 @@ EOF
                     // 2. Artist Badge (Themed Glass Pill)
                     Rectangle {
                         id: artistBadge
-                        visible: root.trackArtist !== ""
+                        visible: root.showArtistBadge && root.trackArtist !== ""
                         Layout.alignment: Qt.AlignVCenter
                         implicitHeight: 22
                         implicitWidth: artistText.implicitWidth + 14
@@ -1045,7 +1446,7 @@ EOF
 
                     // 3. Divider Dot
                     Rectangle {
-                        visible: root.trackArtist !== ""
+                        visible: root.showArtistBadge && root.trackArtist !== ""
                         Layout.alignment: Qt.AlignVCenter
                         implicitWidth: 3
                         implicitHeight: 3
@@ -1067,7 +1468,7 @@ EOF
                             anchors.centerIn: parent
                             renderType: Text.NativeRendering
                             font.family: theme.fontFamily
-                            font.pixelSize: theme.fontSizeMain
+                            font.pixelSize: theme.fontSizeMain + root.fontSizeDelta
                             font.bold: true
                             // Contrast outline shadow for crisp legibility over any wallpaper
                             style: Text.Outline
@@ -1083,7 +1484,7 @@ EOF
 
                     // 5. Synced Lyrics Pulse Indicator
                     Rectangle {
-                        visible: root.hasLyrics && root.isPlaying
+                        visible: root.showPulseDot && root.hasLyrics && root.isPlaying
                         Layout.alignment: Qt.AlignVCenter
                         implicitWidth: 6
                         implicitHeight: 6
@@ -1093,7 +1494,7 @@ EOF
                         Behavior on color { ColorAnimation { duration: theme.animFast } }
 
                         SequentialAnimation on opacity {
-                            running: root.hasLyrics && root.isPlaying
+                            running: root.showPulseDot && root.hasLyrics && root.isPlaying
                             loops: Animation.Infinite
                             NumberAnimation { from: 0.35; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
                             NumberAnimation { from: 1.0; to: 0.35; duration: 650; easing.type: Easing.InOutSine }
