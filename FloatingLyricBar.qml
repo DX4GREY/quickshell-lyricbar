@@ -160,6 +160,13 @@ PanelWindow {
         function next(): void { root.next(); }
         function prev(): void { root.prev(); }
         function applyHyprlandKeybinds(): void { root.syncKeybinds(); }
+        function setPosition(edge: string, align: string, offset: int): void {
+            if (edge) root.anchorTop = (edge === "top");
+            if (align) root.horizontalAlign = align;
+            if (offset > 0) root.offsetY = offset;
+            root.saveConfig();
+        }
+        function reloadConfig(): void { root.loadConfigFromDisk(); }
     }
 
     // Process to apply keybindings to Hyprland custom keybinds file
@@ -559,18 +566,33 @@ EOF
     // ==========================================
     Item {
         id: cardWrapper
-        anchors.horizontalCenter: (root.horizontalAlign === "center") ? parent.horizontalCenter : undefined
-        anchors.left: (root.horizontalAlign === "left") ? parent.left : undefined
-        anchors.right: (root.horizontalAlign === "right") ? parent.right : undefined
-        anchors.leftMargin: (root.horizontalAlign === "left") ? root.marginSide : 0
-        anchors.rightMargin: (root.horizontalAlign === "right") ? root.marginSide : 0
-        anchors.bottom: !root.anchorTop ? parent.bottom : undefined
-        anchors.top: root.anchorTop ? parent.top : undefined
-        anchors.bottomMargin: !root.anchorTop ? root.offsetY : 0
-        anchors.topMargin: root.anchorTop ? root.offsetY : 0
 
         width: Math.max(lyricCard.width, root.settingsOpen ? settingsCard.width : 0)
-        height: lyricCard.height + (root.settingsOpen ? (settingsCard.height + 12) : 0)
+        height: lyricCard.height + (root.settingsOpen ? (settingsCard.height + 10) : 0)
+
+        x: {
+            if (root.horizontalAlign === "left") return root.marginSide;
+            if (root.horizontalAlign === "right") return root.width - cardWrapper.width - root.marginSide;
+            return (root.width - cardWrapper.width) / 2;
+        }
+
+        y: root.anchorTop ? root.offsetY : (root.height - cardWrapper.height - root.offsetY)
+
+        Behavior on x {
+            NumberAnimation {
+                duration: 380
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.06
+            }
+        }
+
+        Behavior on y {
+            NumberAnimation {
+                duration: 380
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.06
+            }
+        }
 
         readonly property bool isShown: root.effectiveVisible
 
@@ -635,14 +657,6 @@ EOF
 
             property int currentTab: 0 // 0: Display & Pos, 1: Keybinds, 2: Styling & Effects
 
-            anchors.horizontalCenter: (root.horizontalAlign === "center") ? parent.horizontalCenter : undefined
-            anchors.left: (root.horizontalAlign === "left") ? parent.left : undefined
-            anchors.right: (root.horizontalAlign === "right") ? parent.right : undefined
-            anchors.bottom: !root.anchorTop ? lyricCard.top : undefined
-            anchors.top: root.anchorTop ? lyricCard.bottom : undefined
-            anchors.bottomMargin: !root.anchorTop ? 10 : 0
-            anchors.topMargin: root.anchorTop ? 10 : 0
-
             width: 530
             height: 350
             radius: 18
@@ -651,6 +665,30 @@ EOF
             border.width: 1
             clip: true
             focus: true
+
+            x: {
+                if (root.horizontalAlign === "left") return 0;
+                if (root.horizontalAlign === "right") return cardWrapper.width - settingsCard.width;
+                return (cardWrapper.width - settingsCard.width) / 2;
+            }
+
+            y: root.anchorTop ? (lyricCard.height + 10) : 0
+
+            Behavior on x {
+                NumberAnimation {
+                    duration: 320
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.06
+                }
+            }
+
+            Behavior on y {
+                NumberAnimation {
+                    duration: 320
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.06
+                }
+            }
 
             transform: Translate {
                 y: root.settingsOpen ? 0 : (root.anchorTop ? -16 : 16)
@@ -1144,11 +1182,6 @@ EOF
         // ==========================================
         Rectangle {
             id: lyricCard
-            anchors.horizontalCenter: (root.horizontalAlign === "center") ? parent.horizontalCenter : undefined
-            anchors.left: (root.horizontalAlign === "left") ? parent.left : undefined
-            anchors.right: (root.horizontalAlign === "right") ? parent.right : undefined
-            anchors.bottom: !root.anchorTop ? parent.bottom : undefined
-            anchors.top: root.anchorTop ? parent.top : undefined
 
             // Computed content width for dynamic content-driven sizing
             readonly property real fullContentWidth: {
@@ -1165,12 +1198,37 @@ EOF
             readonly property real targetHeight: root.compact ? theme.pillHeight : theme.barHeight
             readonly property real targetRadius: root.compact ? (targetHeight / 2) : theme.cornerRadius
 
+            width: targetWidth
             implicitWidth: targetWidth
             height: targetHeight
             radius: targetRadius
 
+            x: {
+                if (root.horizontalAlign === "left") return 0;
+                if (root.horizontalAlign === "right") return cardWrapper.width - lyricCard.width;
+                return (cardWrapper.width - lyricCard.width) / 2;
+            }
+
+            y: root.anchorTop ? 0 : (cardWrapper.height - lyricCard.height)
+
+            Behavior on x {
+                NumberAnimation {
+                    duration: 320
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.06
+                }
+            }
+
+            Behavior on y {
+                NumberAnimation {
+                    duration: 320
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.06
+                }
+            }
+
             // Apple Dynamic Island fluid spring morphology
-            Behavior on implicitWidth {
+            Behavior on width {
                 NumberAnimation {
                     duration: 460
                     easing.type: Easing.OutBack
