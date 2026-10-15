@@ -60,7 +60,7 @@ PanelWindow {
 
     readonly property bool isPlaying: playbackStatus === "Playing"
     readonly property bool hasMedia: trackTitle !== "" && playbackStatus !== "Stopped"
-    readonly property bool effectiveVisible: showing && (!autoHideOnStop || hasMedia)
+    readonly property bool effectiveVisible: settingsOpen || (showing && (!autoHideOnStop || hasMedia))
 
     // Compute target text for dynamic measurement
     readonly property string targetLyric: {
@@ -108,29 +108,18 @@ PanelWindow {
     // 3. Layer Shell Window Positioning & Click Mask
     // ==========================================
     anchors {
-        top: root.anchorTop
-        bottom: !root.anchorTop
+        top: true
+        bottom: true
         left: true
         right: true
     }
-    margins {
-        top: root.anchorTop ? root.offsetY : 0
-        bottom: !root.anchorTop ? root.offsetY : 0
-    }
-    implicitHeight: root.settingsOpen ? 450 : (theme.barHeight + root.offsetY + 30)
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-
-    Behavior on implicitHeight {
-        NumberAnimation {
-            duration: 380
-            easing.type: Easing.OutCubic
-        }
-    }
 
     // HyprGlass layer integration
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:lyricbar"
+    WlrLayershell.keyboardFocus: root.settingsOpen ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     // Click mask: Hanya area card aktif yang menangkap input mouse
     mask: Region {
@@ -577,6 +566,8 @@ EOF
         anchors.rightMargin: (root.horizontalAlign === "right") ? root.marginSide : 0
         anchors.bottom: !root.anchorTop ? parent.bottom : undefined
         anchors.top: root.anchorTop ? parent.top : undefined
+        anchors.bottomMargin: !root.anchorTop ? root.offsetY : 0
+        anchors.topMargin: root.anchorTop ? root.offsetY : 0
 
         width: Math.max(lyricCard.width, root.settingsOpen ? settingsCard.width : 0)
         height: lyricCard.height + (root.settingsOpen ? (settingsCard.height + 12) : 0)
@@ -588,9 +579,12 @@ EOF
         property real animScale: isShown ? 1.0 : 0.86
         property real animOpacity: isShown ? 1.0 : 0.0
 
-        y: animY
         scale: animScale
         opacity: animOpacity
+
+        transform: Translate {
+            y: cardWrapper.animY
+        }
 
         visible: opacity > 0.001
 
@@ -638,16 +632,16 @@ EOF
             visible: opacity > 0.001
             opacity: root.settingsOpen ? 1.0 : 0.0
             scale: root.settingsOpen ? 1.0 : 0.90
-            y: root.settingsOpen ? 0 : (root.anchorTop ? -18 : 18)
 
             property int currentTab: 0 // 0: Display & Pos, 1: Keybinds, 2: Styling & Effects
 
-            anchors.horizontalCenter: (root.horizontalAlign === "center") ? lyricCard.horizontalCenter : undefined
+            anchors.horizontalCenter: (root.horizontalAlign === "center") ? parent.horizontalCenter : undefined
             anchors.left: (root.horizontalAlign === "left") ? parent.left : undefined
             anchors.right: (root.horizontalAlign === "right") ? parent.right : undefined
             anchors.bottom: !root.anchorTop ? lyricCard.top : undefined
             anchors.top: root.anchorTop ? lyricCard.bottom : undefined
-            anchors.margins: 10
+            anchors.bottomMargin: !root.anchorTop ? 10 : 0
+            anchors.topMargin: root.anchorTop ? 10 : 0
 
             width: 530
             height: 350
@@ -656,6 +650,28 @@ EOF
             border.color: theme.glassBorder
             border.width: 1
             clip: true
+            focus: true
+
+            transform: Translate {
+                y: root.settingsOpen ? 0 : (root.anchorTop ? -16 : 16)
+                Behavior on y {
+                    NumberAnimation {
+                        duration: 380
+                        easing.type: Easing.OutBack
+                        easing.overshoot: 1.10
+                    }
+                }
+            }
+
+            Keys.onEscapePressed: {
+                root.settingsOpen = false;
+            }
+
+            onVisibleChanged: {
+                if (visible && root.settingsOpen) {
+                    settingsCard.forceActiveFocus();
+                }
+            }
 
             Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
             Behavior on scale {
@@ -663,13 +679,6 @@ EOF
                     duration: 380
                     easing.type: Easing.OutBack
                     easing.overshoot: 1.14
-                }
-            }
-            Behavior on y {
-                NumberAnimation {
-                    duration: 380
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 1.10
                 }
             }
             Behavior on color { ColorAnimation { duration: theme.animMed } }
