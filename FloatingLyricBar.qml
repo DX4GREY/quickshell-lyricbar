@@ -578,22 +578,6 @@ EOF
 
         y: root.anchorTop ? root.offsetY : (root.height - cardWrapper.height - root.offsetY)
 
-        Behavior on x {
-            NumberAnimation {
-                duration: 380
-                easing.type: Easing.OutBack
-                easing.overshoot: 1.06
-            }
-        }
-
-        Behavior on y {
-            NumberAnimation {
-                duration: 380
-                easing.type: Easing.OutBack
-                easing.overshoot: 1.06
-            }
-        }
-
         readonly property bool isShown: root.effectiveVisible
 
         // Apple-style entrance / exit fluid spring state
@@ -631,21 +615,6 @@ EOF
             }
         }
 
-        Behavior on width {
-            NumberAnimation {
-                duration: 440
-                easing.type: Easing.OutBack
-                easing.overshoot: 1.08
-            }
-        }
-
-        Behavior on height {
-            NumberAnimation {
-                duration: 380
-                easing.type: Easing.OutCubic
-            }
-        }
-
         // ==========================================
         // 9. Settings Modal (Keybinds & Preferences)
         // ==========================================
@@ -673,22 +642,6 @@ EOF
             }
 
             y: root.anchorTop ? (lyricCard.height + 10) : 0
-
-            Behavior on x {
-                NumberAnimation {
-                    duration: 320
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 1.06
-                }
-            }
-
-            Behavior on y {
-                NumberAnimation {
-                    duration: 320
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 1.06
-                }
-            }
 
             transform: Translate {
                 y: root.settingsOpen ? 0 : (root.anchorTop ? -16 : 16)
@@ -1210,22 +1163,6 @@ EOF
             }
 
             y: root.anchorTop ? 0 : (cardWrapper.height - lyricCard.height)
-
-            Behavior on x {
-                NumberAnimation {
-                    duration: 320
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 1.06
-                }
-            }
-
-            Behavior on y {
-                NumberAnimation {
-                    duration: 320
-                    easing.type: Easing.OutBack
-                    easing.overshoot: 1.06
-                }
-            }
 
             // Apple Dynamic Island fluid spring morphology
             Behavior on width {
